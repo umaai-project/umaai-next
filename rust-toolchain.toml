@@ -1,0 +1,5 @@
+# 项目使用 nightly 的 rustfmt 规则（见 rustfmt.toml，含 wrap_comments / imports_* 等）。
+# 如需完全可复现，可把 channel 换成带日期的固定版本（例如 "nightly-2026-07-19"）。
+[toolchain]
+channel = "nightly"
+components = ["rustfmt", "clippy"]

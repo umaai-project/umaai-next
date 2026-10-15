@@ -1,0 +1,10 @@
+[package]
+name = "umasim"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+umaai-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+thiserror.workspace = true

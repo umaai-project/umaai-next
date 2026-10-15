@@ -1,0 +1,223 @@
+# UmaAI-RS 默认配置（开发参考版）
+# 用户覆盖：在 workspace 根目录的 game_config.toml 中平铺或使用 [xxx] 段覆盖。
+#
+# ===== 配置段说明（Phase 2 步骤 2+3）=====
+# 本文件按职责组织字段（对应 Rust 侧 GameConfig 子配置访问器）：
+#
+#   simulation 剧本/训练员/马娘/卡组/模拟次数
+#   search     MCTS/神经网络/用户可调搜索项
+#   policy     拉面杯地区/超级拉面选择策略（步骤 5 接入）
+#   output     日志级别
+#   dev        collector 数据收集（开发者工具）
+#
+# 注：serde 仍按顶层平铺字段解析（GameConfig 聚合壳），段结构为组织概念。
+# ============================================
+
+# ---------- simulation ----------
+scenario = "ramen"
+
+# 训练员类型: "manual" | "random" | "handwritten" | "collector" | "neuralnet" | "mcts"
+trainer = "handwritten"
+
+# 模拟次数（>1 时显示最高分/最低分/平均分面板）
+simulation_count = 1
+
+# 马娘 ID（参考 umaDB.json）
+uma = 102601
+
+# 拉面杯推荐卡组（与单元测试一致）：
+# [速]杏目, [智]青春永驻, [耐]名将怒涛, [速]洛林军歌, [速]里见光钻, [友]骏川手纲
+cards = [302424, 302894, 303044, 302924, 303024, 303054]
+
+# 种马蓝因子个数 [速度, 耐力, 力量, 根性, 智力]
+blue_count = [15, 0, 0, 0, 3]
+
+# 种马额外属性 [速度, 耐力, 力量, 根性, 智力, 技能点]
+extra_count = [0, 40, 20, 20, 40, 50]
+
+
+# ---------- search ----------
+
+# neuralnet ONNX 模型路径（仅 trainer="neuralnet" 时生效）
+neuralnet_model_path = "saved_models/onsen_v18/model.onnx"
+
+# MCTS 优先选择评分("score") 还是 PT("pt")
+mcts_selection = "score"
+
+# 蒙特卡洛每回合期望得分加成（搜索启发式参数）
+mcts_turn_bonus = 70
+
+# PT 偏好评分倍率（与 mcts_selection 联用）
+# 正式档 = 2.0（2026-09-15 定档：N=1024 扫参 §6.1/6.2 + N=4096 深测 §6.3——深测下
+# 2.0 换 PT 的评分损失在噪声内、PT 增益显著 t=+6.3；速系 build 受益、智系需回调）
+pt_favor_rate = 2.0
+
+# 比赛等级表（72 项，回合 0-71；URA 回合 72-77 固定 G1 不在此表）
+race_grades = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 3, 4, 3, 3, 4, 3, 3, 2, 3, 1, 1, 3, 4, 3, 4, 2, 2, 1, 2, 1, 1, 1, 1, 1, 3, 3, 3, 3, 1, 1, 1, 1, 1, 2, 1, 2, 3, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 3, 3, 3, 3, 3, 1, 2, 1, 1, 1, 2, 1]
+
+# ---------- policy（拉面杯第3年地区选择策略，Phase 2 步骤 5 接入）----------
+# 仅对第3年生效（解决 C(10,3)=120 组合性能问题）；第1/2年固定走 all 枚举。
+# 注意：本段字段必须在任意 [xxx] 段之前声明（顶层平铺），否则会被前一个段吞掉。
+# ramen_region_strategy: "all"（默认；枚举 120 组合）| "fixed"（按 ramen_region_fixed 单组合，跳过枚举）
+ramen_region_strategy = "all"
+# 仅当 ramen_region_strategy="fixed" 时生效
+ramen_region_fixed = [[11, 14, 15]]
+
+# 拉面杯客户端的动作决策由谁负责（事件选项始终走手写策略）：
+#   "mcts"（默认）：既有逻辑，按 [mcts] 配置搜索
+#   "mcts_nn_hint"：执行与 mcts 相同，另外在每个动作决策下显示一行神经网络的推荐作参考
+#   "nn"：全部动作决策由神经网络直接给出，不做搜索，以分数换速度（模型仍在迭代中）
+#         仅适用于训练覆盖的卡组构成（各带 1 张友人卡）：2速2耐1智 / 2速1耐1力1智 / 3速1耐1智 /
+#         2速1耐2智 / 2速1力1根1智；训练卡池外的卡在数值足够强时表现良好，其他构成效果未知
+#         对照 MCTS（search_n=1024）实测：快约 90 倍，分数低约 1.1k~2.1k（95% 区间）
+# 后两项需要 onnx feature 构建（cargo build --release --features onnx -p umaai）
+# 以及 ramen_nn_model_path。
+ramen_trainer_policy = "mcts"
+# 拉面杯网络模型路径，需同目录存在同名 .json 旁车（<模型>.onnx.json）。
+# 与 neuralnet_model_path 是不同的模型，不可混填。模型不随仓库发布。
+# ramen_nn_model_path = "saved_models/<模型>.onnx"
+
+# 拉面手写策略：为多拿总 PT 最多愿意牺牲的总评分（评分换 PT，顶层可调）
+# 只影响"训练位主属性已满"的训练候选（终盘最常见）：属性收益为 0 时只剩 PT，
+# 本值决定策略还愿不愿意练它。0 = 评分优先（默认，实测评分峰值）；越大越偏
+# 向多拿 PT。内部映射（7 build×100 局实测标定，seed 61444）：
+#   0 → 定价 36（评分峰值 65266）；≤60 → 44；≤160 → 52；其余 → 64（PT 峰值 8690）
+# 超过 64 会误选已满位导致评分与 PT 双降，故内部封顶 64。
+
+# ---------- output ----------
+log_level = "info"
+
+# ---------- 在线记录（仅 umaai 实时运行读取；离线 sim/bench 不使用） ----------
+# 每局一目录 logs/game{id}/：thisTurn.json 原文 + decisions.csv + meta.json
+# （开关在 game_config.toml 的 [config_override] 段可覆盖为 false）
+luck_record = true
+
+# ---------- 拉面杯：友人出行完成要求（仅 umaai 实时运行读取；离线 sim/bench 不读） ----------
+# 是否要求 5 次友人出行**必须走完**（默认开）。
+# 开：手写策略（及以手写为基策的 MCTS）施加完成硬门限——剩余出行次数达到
+#     "剩余可出行回合数"时强制出行（不再受隐藏风味闸门约束），保证 5 次走完。
+#     代价：末盘会挤掉部分训练回合，赛程越差（第三年必赛多）代价越高。
+# 关：回到纯动态估值口径，允许主动跳过价值不足的第 5 次。
+# 开关在 game_config.toml 的 [config_override] 段可覆盖为 false。
+friend_complete_required = true
+
+
+[mcts]
+# 每个动作搜索次数（默认 12288；计算太慢可选 8192/4096）
+search_n = 12288
+
+# UCB 每组搜索次数
+search_group_size = 512
+
+# 激进度上限（越大越重视胡局；0=平均，>4=只考虑最好局面）
+radical_factor_max = 1.4
+
+# UCB 期望标准差（探索项缩放量级）：按实测 region 单条 rollout 分数 σ≈2.4k 标定。
+# 原 15000 约为实测 σ 的 6×，探索项过强、浪费 rollout；
+# A/B（6 世界配对，search_n=8192）得分 Δ=+283±502（不显著），单局耗时 143.3s→69.5s。
+expected_search_stdev = 2500.0
+
+# 最大搜索深度（0=搜到游戏结束；>0=截断后用 leaf eval 估值）
+max_depth = 0
+
+# policy softmax 温度
+policy_delta = 100.0
+
+# 拉面杯搜哪些阶段（逗号分隔：train / ramen / special / region / event / super）
+# 实测补上 ramen 后 42 局配对 +2306 分；同算力加到 train 的 search_n 上只值 +39 分
+ramen_search_stages = "train,ramen,region"
+
+# 拉面地区选择（RegionSelect）候选预过滤 top-K：0 = 不剪枝（生产默认）
+# K>0 时按手写地区先验降序取前 K 个进入搜索，并强制并入手写 argmax（结果不劣于纯手写该点）；
+# 第 3 年地区候选 C(10,3)=120 个是本局最大候选集，是本项的主要作用点。
+# ramen_region_prune_topk = 30
+
+# UCB 搜索分配
+use_ucb = true
+search_cpuct = 1.0
+
+# 公共随机数（CRN）：外挂阶段重播种（仅 onsen 规则层未改造时生效；
+# 拉面已由规则层无状态流接管，不受此开关影响）
+crn_stage_reseed = true
+
+# leaf eval 微批大小（仅 max_depth>0 && rollout_evaluator="nn" 时生效）
+rollout_batch_size = 64
+
+# leaf eval 评估器（handwritten/nn）
+# 拉面分支没有 leaf eval（`SUPPORTS_TRUNCATED_LEAF=false`，只搜到终局），本键在那里表示
+# **rollout 基策**：`"nn"` = 搜索内部模拟的每个决策点都走网络（实验档，推理次数 ≈
+# 决策点数 × rollout 条数，生产 search_n 下跑不完），模型取 `ramen_nn_model_path`
+rollout_evaluator = "handwritten"
+
+
+# ---------- dev（collector 数据收集，仅 generate_mean_filtered_data bin 使用）----------
+[collector]
+# 目标 accepted 样本数
+target_samples = 40000
+
+# 最多模拟局数（达到仍未凑够则提前结束）
+max_games = 200000
+
+# action 样本阈值：scoreMean >= threshold 才写入数据集
+score_mean_threshold = 58000
+
+# 输出基础目录
+output_dir = "training_data"
+
+# 输出名称前缀（实际写入 output_dir/output_name/，再按需追加时间戳）
+output_name = "mf_RUN_TODO"
+
+# 是否在输出目录名后追加时间戳（true 每次新建带时间戳目录，false 固定续跑）
+output_append_timestamp = true
+
+# 时间戳格式（chrono strftime）
+output_timestamp_format = "%Y%m%d_%H%M%S"
+
+# 每个分片包含的样本数
+shard_size = 4096
+
+# manifest 文件名（输出目录内）
+manifest_name = "manifest.json"
+
+# scoreMean values 文件名（append-only，用于 p50/p90/p99）
+score_mean_values_name = "score_mean_values.bin"
+
+# 是否允许续跑（resume）
+resume = false
+
+# rayon 线程数
+threads = 24
+
+# 进度输出间隔
+progress_interval = 5
+
+# collector 段搜索参数（覆盖 [mcts]）
+search_n = 10240
+use_ucb = true
+search_group_size = 256
+policy_delta = 100.0
+radical_factor_max = 1.5
+search_cpuct = 1.0
+expected_search_stdev = 2200.0
+
+# choice 样本（用于训练 choice head）
+collect_choice = true
+choice_rollouts_per_option = 2
+choice_score_mean_threshold = 60500
+
+
+# ============================================================
+# 温泉遗留段（Phase 6 删除温泉时代预期移除）
+# ============================================================
+
+# 温泉选择是否允许蒙特卡洛自由发挥（为false时，严格按照 [onsen_order] 选择）
+mcts_selected_onsen = false
+
+# 温泉选择顺序：
+# 疾驰之泉(1) - 速度/力量友情 | 坚忍之泉(2) - 耐力/根性友情 | 明晰之泉(3) - 比赛+30%
+# 骏闪古泉(4) - Hint+100% | 刚足古泉(5) - 力量/根性友情 | 健壮古泉(6) - 耐力/体力消耗
+# 天翔古泉(7) - 比赛+60% | 秘汤汤驹(8) - 分身效果 | 传说秘泉(9) - 比赛+80%（⭐第三年9月强制）
+[onsen_order]
+year1 = [1, 3, 2]
+year2 = [6, 7, 4, 2]
+year3 = [8, 9, 4, 2, 5]

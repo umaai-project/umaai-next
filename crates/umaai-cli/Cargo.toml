@@ -1,0 +1,13 @@
+[package]
+name = "umaai-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "umaai-cli"
+path = "src/main.rs"
+
+[dependencies]
+umaai-core.workspace = true
+umaai.workspace = true
+anyhow.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "umaai"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+umaai-core.workspace = true
+umasim.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true

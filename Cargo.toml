@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/umaai-core",
+    "crates/umasim",
+    "crates/umaai",
+    "crates/umaai-cli",
+    "crates/umaai-tools",
+    "crates/umaai-tests",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+# 内部 crate —— 单向依赖：cli → umaai → umasim → umaai-core
+umaai-core = { path = "crates/umaai-core" }
+umasim = { path = "crates/umasim" }
+umaai = { path = "crates/umaai" }
+
+# 轻量基础依赖（核心层仅允许此类；终端/计算/网络重依赖不得进入核心层）
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+debug = true

@@ -1,0 +1,11 @@
+[package]
+name = "umaai-tools"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+umaai-core.workspace = true
+umasim.workspace = true
+umaai.workspace = true
+anyhow.workspace = true
