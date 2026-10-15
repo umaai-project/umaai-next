@@ -21,6 +21,7 @@
 | 9 | 测试：单元 `assert`、集成 print+Agent、baseline 自动判定；跨 crate 集成测试放**专用 crate `umaai-tests`** |
 | 10 | 更新器：放弃独立 GUI 形态，改由入口层（`umaai-cli`）在启动时提示 / 子命令更新数据；**不做进程内热更**；细节待定 |
 | 11 | 算法探索 workbench（GA / NN）：**待定**（倾向独立项目） |
+| 12 | 工具链统一 **stable**（钉死版本）；rustfmt 只用稳定选项，放弃 nightly 专属风格 |
 
 ---
 
@@ -42,8 +43,8 @@
 ```
 miko_next/
 ├─ Cargo.toml                 # workspace（6 members，resolver = 3）
-├─ rust-toolchain.toml        # nightly（rustfmt 规则需要）
-├─ rustfmt.toml               # 与旧仓一致的 nightly 格式规则
+├─ rust-toolchain.toml        # stable（钉死版本，如 1.95.0）
+├─ rustfmt.toml               # 稳定工具链可用的格式规则
 ├─ .gitignore
 ├─ .github/workflows/ci.yml   # fmt / clippy / test 门控
 ├─ AGENTS.md

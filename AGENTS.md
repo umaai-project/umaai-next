@@ -57,7 +57,7 @@
 ### 代码质量
 1. 嵌入代码（如 XML / JSON 内联）需仔细检查语法。
 2. 工具类方法符合标准 Trait（`From` / `TryFrom` / `Deref` / `Display` 等）时优先实现。
-3. **禁用 `cargo fmt`**：只能由用户手动执行（项目用 Nightly 格式规则，stable 会搞乱格式）。
+3. **`cargo fmt` 可运行**：工具链统一 stable（见 `rust-toolchain.toml`），格式规则见 `rustfmt.toml`；改动代码后可自行执行 `cargo fmt`。
 
 ## 工具使用
 

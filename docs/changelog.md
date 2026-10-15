@@ -7,3 +7,4 @@
 - 建立 `docs/` 目录结构（plan / game / notes + changelog / issues），迁入游戏机制文档（规则 / 实现细节 / 术语 / 固有效果）
 - 迁入通用数据 `gamedata/`（cardDB / umaDB / events / text_data_dict / constants / default_config，排除剧本数据）
 - 新增 `AGENTS.md` 与重建方案 v2（`docs/plan/miko_next_plan.md`），记录本轮讨论定稿决策；v1 方案作参考随仓保留
+- 工具链统一 stable：`rust-toolchain.toml` 由 nightly 改为钉死 stable（1.95.0），`rustfmt.toml` 精简为稳定可用选项（放弃 nightly 专属风格），CI 同步；解除「禁用 `cargo fmt`」限制
