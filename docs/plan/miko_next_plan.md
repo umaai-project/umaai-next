@@ -43,7 +43,7 @@
 ```
 miko_next/
 ├─ Cargo.toml                 # workspace（6 members，resolver = 3）
-├─ rust-toolchain.toml        # stable（钉死版本，如 1.95.0）
+├─ rust-toolchain.toml        # stable（钉死版本，如 1.99.0）
 ├─ rustfmt.toml               # 稳定工具链可用的格式规则
 ├─ .gitignore
 ├─ .github/workflows/ci.yml   # fmt / clippy / test 门控

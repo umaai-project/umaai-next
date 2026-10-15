@@ -1,5 +1,5 @@
-# 统一 stable 工具链（不再依赖 nightly）；钉死具体版本以保证格式与构建可复现。
+# 统一 stable 工具链（不再依赖 nightly）；钉死当前最新 stable 版本以保证格式与构建可复现。
 # 升级版本时同步更新 .github/workflows/ci.yml。
 [toolchain]
-channel = "1.95.0"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]

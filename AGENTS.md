@@ -18,9 +18,18 @@
 
 - [docs/plan/](docs/plan/miko_next_plan.md)：重建方案（v2 权威 + v1 参考）
 - [docs/game/](docs/game/README.md)：游戏机制（规则 / 实现细节 / 术语 / 固有效果）
-- [docs/changelog.md](docs/changelog.md)：变更日志（commit 前更新，每条一行）
-- [docs/issues.md](docs/issues.md)：问题记录
+- [docs/changelog.md](docs/changelog.md)：变更日志（极简，每条一行）
+- [docs/issues.md](docs/issues.md)：问题记录（状态 + 排查过程）
+- [docs/project_context.md](docs/project_context.md)：项目上下文（最新代码结构）
 - [docs/notes/](docs/notes/open_items.md)：开发笔记与待决事项
+
+## 文档规则
+
+以下三个文档随代码同步维护，均在提交准备阶段统一更新（见「Git 操作」）：
+
+1. **changelog**（`docs/changelog.md`）：**极简记录**。每条修改一行，只写「改了什么」，不含具体代码、变量名或数值。
+2. **issues**（`docs/issues.md`）：记录**问题状态与排查过程**（现象 / 根因 / 结论 / 处理结果），避免重复踩坑。
+3. **project_context**（`docs/project_context.md`）：记录**最新版代码结构**（工作空间 / crate / 模块 / 配置文件 / 数据约定 / 开发环境等）。只描述当前现状，不含旧结构或修改过程。
 
 ## 安全注意事项
 
@@ -43,14 +52,14 @@
 
 ### 代码结构
 1. **新类型原则**：固定结构的数据建新类型，避免裸 Tuple。
-2. **文档化注释**：所有新增函数 / 宏 / 结构体必须有可用于 rustdoc 的注释。
+2. **文档化注释**：所有新增函数 / 宏 / 结构体必须有可用于 rustdoc 的注释。注释需简短，一般不超过10行；文件头部注释不超过15行；注释必须对应代码现状，历史修改应写入changelog文档，不可挂在注释上
 3. 变量命名简短；长词可用缩写。
 
 ### 测试规范
-1. **分层与断言**：单元测试（内联，私有细节 / 纯函数）用 `assert`；**集成测试（`tests/`）不用 `assert`**，用 `print` 类输出供 Agent 检查；baseline 测试用「比对后返回 `Err` / 非零退出码」自动判定。
+1. **分层与断言**：单元测试（内联，私有细节 / 纯函数）用 `assert`；**集成测试（`tests/`）不用 `assert`**，用 `print` 类输出 + `Result`返回值供 Agent 检查；baseline 测试用「比对后返回 `Err` / 非零退出码」自动判定。
 2. **失败信号**：集成测试统一经 `umaai-tests` 的 `Checker`（打印 + 聚合 + 返回 `Err`），保证 `cargo test` 有失败信号。
 3. 跨 crate 的集成 / 端到端测试放 `crates/umaai-tests/tests/`；共享夹具经 testkit 暴露，禁止 `#[path = "..."]` 跨目录引入。
-4. 新功能需在当前文件或对应 `tests/` 补测试。
+4. 新功能需在当前文件或对应 `tests/` 补测试，并随实现更新 `test_overview` 文档。
 5. 测试工作目录为 workspace 根；需要时用公共函数定位。
 6. **Release 模式**：所有 test 与 binary 用 Release 编译。
 
@@ -64,9 +73,11 @@
 - PowerShell 下可用：`cargo nextest`、`tokei`、`grep`。
 
 ### Git 操作
-1. **提交前先写 changelog**：先更新 `docs/changelog.md`，由用户确认后再 `git commit`。
-2. 提交需涵盖工作树下由 Agent 与用户做的全部修改。
-3. 遵循 Git 安全协议，避免破坏性操作。
+1. **不自动提交 / 推送**：Agent 不主动 `git commit`、`git push`。先确认用户已完成全部想做的调整，再进入提交准备与提交。
+2. **提交前准备**：提交准备阶段统一更新三个文档——`docs/changelog.md` / `docs/issues.md` / `docs/project_context.md`（规则见「文档规则」），由用户确认后再 `git commit`。
+3. **提交范围**：commit 需涵盖工作树下由 Agent 与用户做的全部修改。
+4. **推送由用户手动执行**：`git commit` 后不推送，push 一律交由用户手动完成。
+5. 遵循 Git 安全协议，避免破坏性操作。
 
 ## 数据约定
 
