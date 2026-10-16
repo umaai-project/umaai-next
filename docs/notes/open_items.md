@@ -13,6 +13,9 @@
 | 6 | **发布 exe 名** | 暂 `umaai-cli` | 最终 `umaai.exe` 产物名在打包阶段定；注意与 lib crate `umaai` 的同名产物冲突 |
 | 7 | **gamedata 数据版本策略** | 待定 | `manifest.json` 的 `schema_version` 语义、数据来源盖章方式 |
 | 8 | **`umaai-rs-ref` 是否随进度更新** | 待定 | 现为 master 只读工作树，建议冻结不动 |
+| 9 | **比赛等级表预设机制** | 已拍板方向，设计待 P4′ | 配置层提供多个预设表按名选择（类似 bench 预设卡组）；`pt_favor_rate` 代码默认值 + 配置覆盖；当前经构造参数注入 |
+| 10 | **剧本钩子 trait 形态** | 已拍板延后 | `ScenarioRules` / `ScenarioLifecycle` 待有具体剧本时设计；扩充纪律：带默认实现、非破坏 |
+| 11 | **无剧本基础局不带专用智能算法** | 已拍板 | `BasicGame` 仅为冒烟基线，无终端用户；智能算法（策略 / NN 特征 / 调参）归剧本仓，umasim 只交付框架与骨架（搜索泛型 / `ActionIndex` / evaluator 壳 / rollout 基础设施）。例外：`RandomTrainer` 作为契约参考实现与 CLI 调试件，P5′ 前产品化 |
 
 ## 迁入本仓时已知的文档悬空引用
 

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "files": [
+    "umaDB.json",
+    "cardDB.json",
+    "text_data_dict.json",
+    "events.json",
+    "constants.json"
+  ]
+}

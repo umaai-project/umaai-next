@@ -1,13 +1,28 @@
 # 变更日志
 
-本文件简要记录每次任务的修改内容。每条一行，不含代码细节。
+本文件简要记录每次任务的修改内容（时间倒序，最新在前）。每条一行，不含代码细节。
 
-## 2026-10-14
-- 初始化 miko_next 项目骨架：独立 git 仓 + workspace（6 crate：umaai-core / umasim / umaai / umaai-cli / umaai-tools / umaai-tests）+ rust-toolchain / rustfmt / .gitignore / CI
-- 建立 `docs/` 目录结构（plan / game / notes + changelog / issues），迁入游戏机制文档（规则 / 实现细节 / 术语 / 固有效果）
-- 迁入通用数据 `gamedata/`（cardDB / umaDB / events / text_data_dict / constants / default_config，排除剧本数据）
-- 新增 `AGENTS.md` 与重建方案 v2（`docs/plan/miko_next_plan.md`），记录本轮讨论定稿决策；v1 方案作参考随仓保留
-- 工具链统一 stable：`rust-toolchain.toml` 由 nightly 改为钉死 stable（1.99.0），`rustfmt.toml` 精简为稳定可用选项（放弃 nightly 专属风格），CI 同步；解除「禁用 `cargo fmt`」限制
+## 2026-10-17
+- `umasim` 落地规则基座：通用枚举与友人状态、继承因子、马娘、支援卡、基础局状态 / 动作 / 无剧本基础局
+- `umasim` 落地契约 trait：训练人头、动作、游戏、训练员与训练基础值表来源钩子（游戏契约继承表来源）
+- 呈现与协议件不移植（解释文本、诊断输出、彩色、表格、视图 / 决策上下文 DTO），待上层阶段以默认实现加回
+- 比赛等级表改为构造注入（归配置层）；生涯与自选比赛记录迁移到位段类型；评分链路因全局读取改为可失败返回
+- 生病位集接入语义构造：加 / 减路径维护与不擅长训练同置同清，通配位按语境翻译
+- 事件构造器（红点属性 / 红点技能 / 加练）随依赖全局数据归计算层
+- 无剧本基础局的训练基础值表内置（数值复刻温泉剧本表）；集成测试落地检查器与固定种子端到端（可复现性守门）
+- 计算与测试层新增依赖：随机分布、枚举遍历、快速哈希表、随机库；核心层数组模块补逐元素运算与六元组拆分工具
+- 事件数据文件行尾规范化（内容无变化）
+
+## 2026-10-16
+- `umaai-core` 落地静态数据层：通用数据的纯 schema/DTO、载入与清单/语义校验、全局便捷层
+- `umaai-core` 新增零依赖纯函数件：通用统计原语、CRN rollout 种子表、属性数组别名
+- `umaai-core` 新增局面状态标识类型；生病由布尔改为位集（记录种类，另留「未知」「通配」位）
+- 数据根新增清单文件（schema 版本 + 必需文件），作为数据与程序一致性的唯一校验入口
+- 核心层依赖口径放宽为「轻量、跨平台、通用」，新增整数枚举库依赖
+- 订正 `AGENTS.md` 数据约定中的加载模块归属，并同步方案文档的依赖口径与阶段状态
+- 游戏机制文档补充「生病（状态异常）」小节（种类与效果，未实测标定）并更新术语表
+- 基础依赖版本核对：除按决策锚定的 `rand` 外，其余按当前最新已发布版本钉下限并刷新锁文件
+- `umaai-core` 新增比赛回合位段类型，收敛生涯比赛表 / 自由比赛区间 / 局面比赛记录三处手写移位（不引位段库）
 
 ## 2026-10-15
 - 细化 `AGENTS.md` 的 Git 与文档规则：不自动提交 / 推送（push 由用户手动执行），提交前统一更新三份文档，并明确 changelog / issues / project_context 各自口径
@@ -15,3 +30,10 @@
 - `umaai-core` 收敛为「与游戏无关的通用机制层」：逐字移植 RNG 三流（含单元测试），新增统一错误类型，crate 文档与模块声明同步
 - 核心层引入 `rand` 依赖（锚定 0.9 线，同步到 workspace）
 - 工具链钉死版本上调，CI 与方案文档同步
+
+## 2026-10-14
+- 初始化 miko_next 项目骨架：独立 git 仓 + workspace（6 crate：umaai-core / umasim / umaai / umaai-cli / umaai-tools / umaai-tests）+ rust-toolchain / rustfmt / .gitignore / CI
+- 建立 `docs/` 目录结构（plan / game / notes + changelog / issues），迁入游戏机制文档（规则 / 实现细节 / 术语 / 固有效果）
+- 迁入通用数据 `gamedata/`（cardDB / umaDB / events / text_data_dict / constants / default_config，排除剧本数据）
+- 新增 `AGENTS.md` 与重建方案 v2（`docs/plan/miko_next_plan.md`），记录本轮讨论定稿决策；v1 方案作参考随仓保留
+- 工具链统一 stable：`rust-toolchain.toml` 由 nightly 改为钉死 stable（1.99.0），`rustfmt.toml` 精简为稳定可用选项（放弃 nightly 专属风格），CI 同步；解除「禁用 `cargo fmt`」限制

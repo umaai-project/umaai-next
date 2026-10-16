@@ -8,3 +8,7 @@ umaai-core.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+enum-iterator.workspace = true
+hashbrown.workspace = true
+rand_distr.workspace = true
+rand.workspace = true

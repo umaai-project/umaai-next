@@ -2,6 +2,28 @@
 
 记载复杂问题的解决过程与根因，避免重复踩坑。
 
+## 2026-10-17
+
+### `cargo check` 漏检测试代码
+
+- **现象**：`cargo check -p <crate>` 通过，但 `cargo test` 编译失败（测试模块内的错误）。
+- **排查**：`cargo check` 默认只检查 lib / bin target，不含 `#[cfg(test)]` 与 `tests/` 目录。
+- **结论**：本地门禁统一用 `cargo check --all-targets` / `cargo clippy --all-targets`（与 CI 一致），避免测试代码漏检到 test 阶段才暴露。
+
+## 2026-10-16
+
+### 离线环境下的依赖添加
+
+- **现象**：`cargo add serde_json` 退出 101，报 `rsproxy.cn:443 over proxy 127.0.0.1` 连接失败。
+- **排查**：`cargo add` 需联网更新注册表索引；本地缓存中已有目标 crate 与锁文件解析结果。
+- **结论**：加 `--offline` 即可走本地缓存完成添加。另需注意 `cargo add` 无 `--workspace` 标志（`--workspace` 会被当作依赖名），往 `[workspace.dependencies]` 登记需按 cargo 解析出的版本手工补一行，再把成员依赖改为 `workspace = true`。
+
+### 核对依赖是否有新版的可行手段
+
+- **现象**：`cargo info <pkg>` 退出 101，报 `crates-io is replaced with non-remote-registry source registry 'rsproxy-sparse'`。
+- **排查**：该子命令只接受 crates-io 源，替换源下需显式 `--registry crates-io`（走直连）。
+- **结论**：核对版本改用 `cargo update --dry-run --verbose`——它对「有更新但被版本要求挡住」的包打印 `Unchanged <pkg> vX (available: vY)`；未出现的包即为当前最新。
+
 ## 2026-10-15
 
 ### rand 依赖版本锚定（0.9.5）
