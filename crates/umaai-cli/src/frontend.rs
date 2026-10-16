@@ -93,10 +93,13 @@ impl<W: Write> PrintFrontend<W> {
         self.write_failed
     }
 
-    /// 写一行（失败只记标志，不 panic——`Frontend` 回调没有错误通道）
+    /// 写一行；超宽按呈现宽度折行（内嵌换行按硬断），失败只记标志、不 panic
     fn line(&mut self, text: &str) {
-        if writeln!(self.out, "{text}").is_err() {
-            self.write_failed = true;
+        for seg in term::wrap_display(text, self.opts.width) {
+            if writeln!(self.out, "{seg}").is_err() {
+                self.write_failed = true;
+                return;
+            }
         }
     }
 
@@ -263,15 +266,11 @@ mod tests {
         }
     }
 
-    /// 跑一局只给终局的夹具（无颜色、固定宽度）
-    fn frontend(verbosity: Verbosity) -> PrintFrontend<Vec<u8>> {
+    /// 无颜色、指定宽度的夹具
+    fn frontend_at(verbosity: Verbosity, width: usize) -> PrintFrontend<Vec<u8>> {
         PrintFrontend::new(
             Vec::new(),
-            PrintOptions {
-                verbosity,
-                width: 60,
-                color: false,
-            },
+            PrintOptions { verbosity, width, color: false },
             testdata::consts(),
         )
     }
@@ -279,7 +278,7 @@ mod tests {
     /// 层1：默认档按回合合并，两个回合只落一行，末回合在终局前补落
     #[test]
     fn test_normal_merges_by_turn() {
-        let mut fe = frontend(Verbosity::Normal);
+        let mut fe = frontend_at(Verbosity::Normal, 60);
         fe.on_uma_status(&status(0));
         fe.on_uma_status(&status(0));
         fe.on_uma_status(&status(1));
@@ -292,7 +291,7 @@ mod tests {
     /// 层1：静默档不落任何过程行
     #[test]
     fn test_quiet_only_final() {
-        let mut fe = frontend(Verbosity::Quiet);
+        let mut fe = frontend_at(Verbosity::Quiet, 60);
         fe.on_run_start(&RunStart {
             scenario: "basic".into(),
             trainer: "random".into(),
@@ -306,7 +305,7 @@ mod tests {
     /// 层1：详细档每个阶段一行
     #[test]
     fn test_verbose_per_stage() {
-        let mut fe = frontend(Verbosity::Verbose);
+        let mut fe = frontend_at(Verbosity::Verbose, 60);
         fe.on_game_start(&GameStart {
             epoch_key: 1,
             uma_id: 101901,
@@ -318,10 +317,27 @@ mod tests {
         assert_eq!(out.lines().filter(|l| l.contains("stage#2")).count(), 2);
     }
 
+    /// 层1：过程行超过呈现宽度即折行，每段不超宽且不丢字段
+    #[test]
+    fn test_process_line_wraps_to_width() {
+        let mut fe = frontend_at(Verbosity::Verbose, 40);
+        fe.on_uma_status(&status(0));
+        let out = String::from_utf8(fe.out).expect("UTF-8");
+        assert!(out.lines().count() > 1, "60 列宽的过程行在 40 列下应折行: {out:?}");
+        assert!(
+            out.lines().all(|line| term::text_width(line) <= 40),
+            "折行后每段不得超过呈现宽度: {out:?}"
+        );
+        assert!(
+            out.replace(['\n', ' '], "").contains("体100/100"),
+            "折行不得丢字段: {out:?}"
+        );
+    }
+
     /// 层1：终局块含键值摘要与五维表
     #[test]
     fn test_final_block() {
-        let mut fe = frontend(Verbosity::Normal);
+        let mut fe = frontend_at(Verbosity::Normal, 60);
         fe.on_run_end(&Summary {
             score: 12345,
             pt: 350,

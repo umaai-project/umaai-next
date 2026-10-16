@@ -4,23 +4,31 @@
 //! `thisTurn.json` / `finalScore.json`），根目录由宿主注入——不做平台探测、不读环境变量。
 //! 两条信道同形不同义，判别落在文件名上（[`FrameKind`]）。
 //!
-//! 错误分三层：目录缺失是**配置问题**，[`FileChannel::open`] 直接报错；通道关闭由
-//! [`FileChannel::next_frame`] 报错；运行期瞬时问题（读到半截 / 文件被独占 / notify 事件
+//! 错误分三层：目录缺失是**配置问题**，`FileChannel::open` 直接报错；通道关闭由
+//! `FileChannel::next_frame` 报错；运行期瞬时问题（读到半截 / 文件被独占 / notify 事件
 //! 错误）由通道**自愈**——丢本次事件等下一个写事件、notify 报错时重读全部白名单，并留一条
 //! [`ChannelNote`] 痕迹供宿主取走。引擎不打印。
 //!
 //! 消费接口只提供带超时版本：`Ok(None)` = 这一拍没有新帧。
+//!
+//! **特性 `file-channel`（默认开）**：只有目录监听与稳定读（`FileChannel`）需要文件系统通知依赖；
+//! 帧的形态（[`FrameKind`] / [`RawFrame`] / [`ChannelNote`] / [`plugin_dir`] 与文件名常量）常驻。
+//! 下游自己喂帧时可关闭该特性，把 [`RawFrame`] 直接交给 `Session::step`。
 
+use std::path::{Path, PathBuf};
+
+#[cfg(feature = "file-channel")]
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
+#[cfg(feature = "file-channel")]
 use anyhow::{Context, Result, anyhow};
+#[cfg(feature = "file-channel")]
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 /// `.portable` 目录名（游戏根目录下）
@@ -38,8 +46,10 @@ pub const FRAME_FINAL_SCORE: &str = "finalScore.json";
 /// 白名单：只有这两份文件会被读入，目录里的 `game*.json` 归档一律忽略
 const ALL_KINDS: [FrameKind; 2] = [FrameKind::ThisTurn, FrameKind::FinalScore];
 
-/// 稳定读的重试次数与间隔
+/// 稳定读的重试次数与间隔（仅 `file-channel` 特性下使用）
+#[cfg(feature = "file-channel")]
 const READ_STABLE_ATTEMPTS: usize = 10;
+#[cfg(feature = "file-channel")]
 const READ_STABLE_INTERVAL: Duration = Duration::from_millis(50);
 
 /// 帧信道（同一目录、两种含义）
@@ -60,8 +70,8 @@ impl FrameKind {
         }
     }
 
-    /// 由 basename 反查信道；不在白名单则 `None`
-    fn from_file_name(name: &str) -> Option<Self> {
+    /// 由 basename 反查信道；不在白名单则 `None`（宿主自己读帧文件时可用）
+    pub fn from_file_name(name: &str) -> Option<Self> {
         ALL_KINDS.into_iter().find(|kind| kind.file_name() == name)
     }
 }
@@ -100,6 +110,7 @@ pub fn plugin_dir(root: impl AsRef<Path>) -> PathBuf {
 }
 
 /// 处理队列元素：帧或自愈痕迹
+#[cfg(feature = "file-channel")]
 #[derive(Debug)]
 enum ChannelItem {
     Frame(RawFrame),
@@ -107,6 +118,7 @@ enum ChannelItem {
 }
 
 /// 帧通道：目录监听 + 稳定读 + 去重入队，消费侧按超时取帧
+#[cfg(feature = "file-channel")]
 pub struct FileChannel {
     /// 保持 watcher 存活（drop 即停止监听，producer 随之退出）
     _watcher: RecommendedWatcher,
@@ -118,6 +130,7 @@ pub struct FileChannel {
     _producer: JoinHandle<()>,
 }
 
+#[cfg(feature = "file-channel")]
 impl FileChannel {
     /// 打开通道：要求插件输出目录**已存在**，否则按配置问题报错
     ///
@@ -175,6 +188,7 @@ impl FileChannel {
 /// 稳定读：写入中可能读到空 / 半截内容或撞上文件锁，带重试 + 两次一致校验
 ///
 /// 重试耗尽但读到过内容 → 返回最后一次内容（宽容）；一次都没读到才报错。
+#[cfg(feature = "file-channel")]
 fn read_stable(path: &Path) -> Result<String> {
     let mut last_ok: Option<String> = None;
     for _ in 0..READ_STABLE_ATTEMPTS {
@@ -196,6 +210,7 @@ fn read_stable(path: &Path) -> Result<String> {
 }
 
 /// producer 主体：消费 notify 事件 → 稳定读白名单文件 → 去重后入队
+#[cfg(feature = "file-channel")]
 fn producer_loop(event_rx: Receiver<notify::Result<Event>>, queue_tx: Sender<ChannelItem>, dir: PathBuf) {
     // 每个信道各记一份「上次已入队内容」：内容相同不入队，不同一律入队，一份不丢
     let mut last_pushed: HashMap<FrameKind, String> = HashMap::new();
@@ -226,6 +241,7 @@ fn producer_loop(event_rx: Receiver<notify::Result<Event>>, queue_tx: Sender<Cha
 }
 
 /// 读某个白名单文件的一份稳定内容并去重入队；失败只留痕，等下一个事件
+#[cfg(feature = "file-channel")]
 fn read_and_push(dir: &Path, kind: FrameKind, tx: &Sender<ChannelItem>, last_pushed: &mut HashMap<FrameKind, String>) {
     let path = dir.join(kind.file_name());
     match read_stable(&path) {
@@ -247,6 +263,7 @@ fn read_and_push(dir: &Path, kind: FrameKind, tx: &Sender<ChannelItem>, last_pus
 /// 事件命中的信道（按 basename 匹配，避开路径前缀差异）
 ///
 /// 只认 Create / Modify：Remove / Rename 不触发重读。
+#[cfg(feature = "file-channel")]
 fn matched_kinds(event: &Event) -> Vec<FrameKind> {
     if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
         return Vec::new();
@@ -259,7 +276,42 @@ fn matched_kinds(event: &Event) -> Vec<FrameKind> {
         .collect()
 }
 
+/// 帧形态测试：不依赖文件监听，特性关闭时也守
 #[cfg(test)]
+mod frame_tests {
+    use super::*;
+
+    /// 层1：根目录注入后的目录形态固定
+    #[test]
+    fn test_plugin_dir() {
+        let dir = plugin_dir("game_root");
+        assert!(
+            dir.ends_with("SendGameStatusPlugin"),
+            "目录名应取常量：{}",
+            dir.display()
+        );
+        assert!(dir.starts_with("game_root"), "应落在注入根目录下：{}", dir.display());
+        assert!(
+            dir.to_string_lossy().contains(".portable"),
+            "应经 .portable：{}",
+            dir.display()
+        );
+    }
+
+    /// 层1：文件名 → 信道；非白名单不命中
+    #[test]
+    fn test_frame_kind_lookup() {
+        assert_eq!(FrameKind::from_file_name(FRAME_THIS_TURN), Some(FrameKind::ThisTurn));
+        assert_eq!(
+            FrameKind::from_file_name(FRAME_FINAL_SCORE),
+            Some(FrameKind::FinalScore)
+        );
+        assert_eq!(FrameKind::from_file_name("game6264_turn0.json"), None);
+        assert_eq!(FrameKind::ThisTurn.file_name(), FRAME_THIS_TURN);
+    }
+}
+
+#[cfg(all(test, feature = "file-channel"))]
 mod tests {
     use super::*;
     use notify::event::{CreateKind, ModifyKind};
@@ -316,35 +368,6 @@ mod tests {
             ),
             "不应有新入队项"
         );
-    }
-
-    /// 层1：根目录注入后的目录形态固定
-    #[test]
-    fn test_plugin_dir() {
-        let dir = plugin_dir("game_root");
-        assert!(
-            dir.ends_with("SendGameStatusPlugin"),
-            "目录名应取常量：{}",
-            dir.display()
-        );
-        assert!(dir.starts_with("game_root"), "应落在注入根目录下：{}", dir.display());
-        assert!(
-            dir.to_string_lossy().contains(".portable"),
-            "应经 .portable：{}",
-            dir.display()
-        );
-    }
-
-    /// 层1：文件名 → 信道；非白名单不命中
-    #[test]
-    fn test_frame_kind_lookup() {
-        assert_eq!(FrameKind::from_file_name(FRAME_THIS_TURN), Some(FrameKind::ThisTurn));
-        assert_eq!(
-            FrameKind::from_file_name(FRAME_FINAL_SCORE),
-            Some(FrameKind::FinalScore)
-        );
-        assert_eq!(FrameKind::from_file_name("game6264_turn0.json"), None);
-        assert_eq!(FrameKind::ThisTurn.file_name(), FRAME_THIS_TURN);
     }
 
     /// 层1：事件筛选——只认白名单 basename，且只认 Create / Modify

@@ -20,17 +20,17 @@
 |---|---|---|
 | `umaai-core` | 核心层：纯 schema/DTO + 数据加载 + 零依赖纯函数工具（统计原语 / CRN 种子表）+ RNG 三流 + 统一错误 + 诊断输出机制 | `rng` / `error` / `diag` / `array` / `stats` / `crn` / `flags` / `race_mask` / `gamedata` / `data` 已落地 |
 | `umasim` | 计算层：带行为的领域类型 + 契约 trait（`Game` / `Trainer` / 表来源钩子）+ 领域算法（搜索 / 训练员 / NN）；无终端依赖 | `game/{mod,stage,uma,support_card,inherit,traits}`、`game/base/{mod,stage,person,action,basic}`、`search/{mod,config,result,searchable,terminal,flat_search}`、`trainer` 已落地；呈现 / 协议件延后到上层阶段 |
-| `umaai` | 引擎 lib：`Runner` 主循环 / 协议解析（单场景直连）/ `Config` / 决策编排 / luck / record（无终端与 IO 重依赖） | `config`（默认层 + 覆盖层 + 具名预设）、`frontend`（事件契约 + 局面摘要）、`decision`（决策 DTO + 决策源接缝）、`runner`（离线一局驱动 + 终局汇总 + 局面摘要下发）、`luck`（运气分与显示分换算）、`record`（运气分装配挂载）、`protocol`（帧通用段 / 事件段 / 终局帧 / 帧通道）、`session`（帧驱动会话：一帧一决策 + 终局裁决）已落地；记录落盘与入口层接线待后续阶段 |
-| `umaai-cli` | 控制台工具件 + 呈现样例 + 入口层；终端依赖唯一出口 | `render`（`term` 宽度探测与颜色门禁、`style` 语义色、`explain` 领域词元、`panel` 面板、`table` 表格封装）、`frontend`（`PrintFrontend` + 三档详细度）、`cli`（参数解析 + 选择器映射 + `run_from_args` + stderr 日志器）已落地；lib + 瘦 bin 形态，pub 面不承诺稳定 |
+| `umaai` | 引擎 lib：`Runner` 主循环 / 协议解析（单场景直连）/ `Config` / 决策编排 / luck / record（无终端与 IO 重依赖） | `config`（默认层 + 覆盖层 + 具名预设）、`frontend`（事件契约 + 局面摘要）、`decision`（决策 DTO + 决策源接缝）、`runner`（离线一局驱动 + 终局汇总 + 局面摘要下发）、`luck`（运气分与显示分换算）、`record`（运气分装配挂载）、`protocol`（帧通用段 / 事件段 / 终局帧 / 帧通道〔特性 `file-channel`〕）、`session`（帧驱动会话：一帧一决策 + 终局裁决）已落地；记录落盘与入口层接线待后续阶段 |
+| `umaai-cli` | 控制台工具件 + 呈现样例 + 入口层；终端依赖唯一出口 | `render`（`term` 宽度探测 / 折行与颜色门禁、`style` 语义色、`explain` 领域词元、`panel` 面板、`table` 表格封装）、`frontend`（`PrintFrontend` + 三档详细度）、`cli`（参数解析 + 选择器映射 + `run_from_args` + stderr 日志器）已落地；lib + 瘦 bin 形态，pub 面不承诺稳定 |
 | `umaai-tools` | 探针 / 基准 / 策略×世界接口；dev 重依赖唯一出口 | 骨架 |
-| `umaai-tests` | 集成 / 端到端 / baseline 测试；`Checker`（print + 聚合 + 返回 `Err`）+ 共享夹具 | `Checker` 与 `testing` 夹具、`tests/basic_game.rs`（基础局固定种子端到端）、`tests/search_smoke.rs`（搜索端到端 + 可复现性守门）、`tests/runner_basic.rs`（经引擎运行与直接模拟逐位一致 + 夹具与默认层同值）、`tests/cli_smoke.rs`（入口装配链跑满一局 + 呈现可复现 + 参数严格口径）、`tests/session_basic.rs`（合成帧序列会话端到端 + 真通道用例）已落地；`crates/umaai/tests/` 另有配置 / 运气分 / 协议 / 帧通道集成测试与真机帧夹具（只保留通用段） |
+| `umaai-tests` | 集成 / 端到端 / baseline 测试；`Checker`（print + 聚合 + 返回 `Err`）+ 共享夹具 | `Checker` 与 `testing` 夹具、`tests/basic_game.rs`（基础局固定种子端到端）、`tests/search_smoke.rs`（搜索端到端 + 可复现性守门）、`tests/runner_basic.rs`（经引擎运行与直接模拟逐位一致 + 夹具与默认层同值）、`tests/cli_smoke.rs`（入口装配链跑满一局 + 呈现可复现 + 参数严格口径）、`tests/session_basic.rs`（合成帧序列会话端到端 + 真通道用例）、`tests/smoke.rs`（测试 crate 装配冒烟）已落地；`crates/umaai/tests/` 另有配置 / 运气分 / 协议 / 帧通道集成测试与真机帧夹具（只保留通用段） |
 
 ## 依赖与配置
 
 ### 依赖
 
 - workspace 依赖：`anyhow` / `colored`（着色，cli 受特性门控）/ `console`（终端宽度与显示宽度探测）/ `enum-iterator` / `hashbrown` / `int-enum` / `log`（门面，启用标准库特性）/ `rand`（锚定 0.9 线）/ `rand_distr` / `rayon`（并行）/ `serde`（`derive`）/ `serde_json` / `tabled`（表格，启用转义序列计宽）/ `thiserror` / `toml`（引擎配置）；内部 crate 以 path 依赖。基础依赖版本按当前最新已发布版本**钉下限**（`rand` 例外，按决策锚定 0.9 线）。
-- 核心层 `umaai-core` 只允许**轻量、跨平台、通用**的依赖（现为 `serde` / `serde_json` / `thiserror` / `rand` / `int-enum` / `log` 门面）；提供 feature `diag`（默认开启，诊断输出的编译期裁剪开关）。计算层允许 `rayon`（rollout 并行）与 `log`（诊断与告警）；引擎层 `umaai` 现为 `umaai-core` / `umasim` / `anyhow` / `serde` / `serde_json` / `rand` / `toml` / `notify`（帧通道的文件通知）；终端依赖只在 `umaai-cli`（`tabled` / `console` / 可选 `colored`），dev 重依赖只在 `umaai-tools`。
+- 核心层 `umaai-core` 只允许**轻量、跨平台、通用**的依赖（现为 `serde` / `serde_json` / `thiserror` / `rand` / `int-enum` / `log` 门面）；提供 feature `diag`（默认开启，诊断输出的编译期裁剪开关）。计算层允许 `rayon`（rollout 并行）与 `log`（诊断与告警）；引擎层 `umaai` 现为 `umaai-core` / `umasim` / `anyhow` / `serde` / `serde_json` / `rand` / `toml` / `notify`（帧通道的文件通知，**可选依赖**：特性 `file-channel` 默认开启，关闭后连依赖一起去掉，帧经 `Session::step` 送入）；终端依赖只在 `umaai-cli`（`tabled` / `console` / 可选 `colored`），dev 重依赖只在 `umaai-tools`。
 - 表格库只出现在 `umaai-cli` 的 `render/table.rs`（换库只改该文件）；终端宽度探测与颜色门禁只出现在 `render/term.rs`（其余模块只拿判定结果）。着色受三重门禁：编译期特性 `color`（默认开）、`--no-color` 与 `NO_COLOR` 环境变量、stdout 是否 tty。
 - 新增依赖走 `cargo add`，禁止手改 `Cargo.toml`；子 crate 依赖同步到 workspace 依赖。
 
@@ -41,7 +41,7 @@
 - `rustfmt.toml`：稳定工具链可用选项（`max_width = 120` / `reorder_imports` / `style_edition = "2024"` 等）。
 - `.gitignore`：`/target`、`logs/`、`__pycache__/`、`*.pyc`。
 - `.github/workflows/ci.yml`：`cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo test --workspace --release`。
-- 帧通道路径（`.portable` / `PluginData/SendGameStatusPlugin` / `thisTurn.json` / `finalScore.json`）是引擎**代码常量**，根目录由宿主注入，不做平台探测；实时监听用 `notify`，相关测试一律带显式超时（超时即失败）。
+- 帧通道路径（`.portable` / `PluginData/SendGameStatusPlugin` / `thisTurn.json` / `finalScore.json`）是引擎**代码常量**，根目录由宿主注入，不做平台探测；实时监听用 `notify`（特性 `file-channel`），相关测试一律带显式超时（超时即失败）。帧的形态（信道种类 / 帧原文 / 痕迹类型 / 目录常量）不带特性依赖，常驻可用。
 
 ### 数据（`gamedata/`）
 
@@ -57,6 +57,7 @@
 - `notes/`：开发笔记与待决事项（`open_items.md`）。
 - `changelog.md`：变更日志（极简，每条一行）。
 - `issues.md`：问题记录（状态 + 排查过程）。
+- `tests_overview.md`：测试一览（分层 + 一行一测试，随实现更新）。
 - `project_context.md`：项目上下文（本文件，记录最新代码结构）。
 
 ## 开发环境

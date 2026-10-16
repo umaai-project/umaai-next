@@ -25,7 +25,8 @@
 | 13 | **层界（2026-10-15 定）**：`umaai-core` 只放**纯 schema/DTO + 数据加载 + 零依赖纯函数工具 + RNG + 统一错误**；**带行为的领域类型、全部契约 trait、领域算法归 `umasim`** |
 | 14 | **归属判据**：进 core 的门槛是「**跨算法复用且与游戏、与算法无关**」；「零依赖」只是必要条件，不构成理由 |
 | 15 | 核心层依赖口径：**轻量、跨平台、通用**的库（`serde` / `serde_json` / `thiserror` / `rand` 0.9 / `int-enum` / `log` 门面）；禁终端 / 网络 / 计算重依赖与平台相关件。呈现（着色 / 表格 / 交互）只在 `umaai-cli`；诊断与日志走核心层 `diag` 机制 + `log` 门面 |
-| 16 | **剧本仓形态（2026-10-17 拍板）**：剧本＝**独立仓**，以依赖引用本仓 `umaai-core` / `umasim` / `umaai`（开发期 `path`、稳定期 git `rev`）；**不 fork 本仓、不在本仓加剧本 crate**；剧本专属类型 / 规则 / 策略 / 协议段 / 配置 / 数据全在剧本仓；**剧本仓自带 bin**（入口装配点），本仓不反向依赖外仓 |
+| 16 | **剧本仓形态（2026-10-17 拍板）**：剧本＝**独立仓**，以依赖引用本仓 `umaai-core` / `umasim` / `umaai`（开发期 `path`、稳定期 git `rev`）；**不 fork 本仓、不在本仓加剧本 crate**；剧本专属类型 / 规则 / 策略 / 协议段 / 配置 / 数据全在剧本仓；**剧本仓自带入口装配点**（lib 装配 API 为主、bin 为辅，见 #17），本仓不反向依赖外仓 |
+| 17 | **下游接入与契约分层（2026-10-17 拍板）**：下游（Web / Android / DLL / 手机版）**只依赖引擎 crate**，不依赖主线样例。引擎稳定面＝`umaai-core` / `umasim` / `umaai`；`umaai-cli` / `umaai-tools` 为**主线样例面**（pub 面不承诺，下游不得依赖）；`umaai-tests` / `umaai-tools` 不发布。**剧本交付物＝lib 为主、bin 为辅**：入口装配点是宿主可调用的装配 API（bin 只是主线自测外壳），剧本侧另导出**快照 DTO** 供任意前端渲染，**契约 trait 不加呈现方法** |
 
 ---
 
@@ -72,10 +73,31 @@ miko_next/
 
 ### 剧本仓形态（外仓，2026-10-17 定）
 
-- **形态**：独立仓，不在本 workspace；只依赖 `umaai-core` / `umasim` / `umaai`（`umaai-tests` / `umaai-tools` 为 `publish = false`，外仓拿不到）。
+- **形态**：独立仓，不在本 workspace；**crate 命名 `umaai-<剧本>`**（如 `umaai-ramen`，2026-10-17 拍板取简），只依赖 `umaai-core` / `umasim` / `umaai`。
 - **内容**：剧本领域类型（`Game` / `ActionEnum` / `Person`）、剧本专属协议段解析、persons 构造与阶段自持（内部强类型枚举 + 中间状态在局面里，对外只投影 `StageId`）、决策（`Trainer` 或 `FlatSearchGame`）、剧本专属配置段与数据、测试夹具（真机帧）。
-- **依赖方式**：开发期 `path`（并列目录），稳定期 git `rev` / tag 钉住；若将来走 crates.io 需先确认包名占用。
-- **入口**：剧本仓自带 bin（`Session` 帧驱动 + 自实现 `Frontend`），本仓 CLI 不出剧本产物；**2026-10-17 定稿**：`umaai-cli` 已拆为可依赖的 lib + 瘦 bin，剧本仓 bin 可直接复用其呈现件（`PrintFrontend` / `render` 原语），pub 面不承诺稳定、按 git `rev` 钉住。
+- **数据**：引擎数据根（`gamedata/`：通用表 + 默认配置）与剧本数据（如拉面的 `ramen.json`）**各自独立、都由宿主注入**，**位置按具体终端定**（桌面 / Android 等不同），引擎与剧本都不写死路径；剧本数据不进本仓。
+- **依赖方式**：**不进 crates.io**，因此较老的 `publish = false` 说法只挡发布、不挡使用——开发期 `path` 依赖（并列目录），稳定期 git `tag` 钉住；`umaai-tests`（`Checker` / 夹具）同样可经 path / git 直接用，无需另抽薄包。
+
+  ```toml
+  # 开发期（并列目录）
+  umaai-core = { path = "../umaai-next/crates/umaai-core" }
+  umasim     = { path = "../umaai-next/crates/umasim" }
+  umaai      = { path = "../umaai-next/crates/umaai" }
+  umaai-cli  = { path = "../umaai-next/crates/umaai-cli" }   # 仅终端入口需要（样例面）
+  # 稳定期（同一 repo、同一 tag，cargo 只解析一份检出）
+  # umaai = { git = "<engine repo>", tag = "engine-v0.1.0" }
+  # 下游（Web / Android）：自喂帧、无文件监听
+  # umaai = { git = "<engine repo>", tag = "engine-v0.1.0", default-features = false }
+  ```
+
+- **入口**：剧本仓**以入库装配 API 为主**（剧本类型 + `Session` / `Runner` 装配函数 + 自实现 `Frontend` 参考件），**自带 bin 只是主线自测外壳**、放**仓根**作入口——多端宿主（终端 / Web / Android）各自装配自己的 bin / lib；本仓 CLI 不出剧本产物。**2026-10-17 定稿**：`umaai-cli` 已拆为可依赖的 lib + 瘦 bin，**终端**剧本仓可直接复用其呈现件（`PrintFrontend` / `render` 原语），但那是样例面、pub 面不承诺稳定、按 git `rev` 钉住；Web / Android 下游应自实现 `Frontend`。仓内目录层级等**待首个真实剧本实现后归纳**。
+- **给前端的剧本数据（形态 A，2026-10-17 拍板）**：剧本特有资源（PT / 地区 / 挖掘等）由剧本自持**纯数据 View DTO** + 取数 API 暴露，任意前端消费；**不进契约 trait、不进引擎 DTO**。五条纪律：
+  - **单一取数口**：一个 `XxxView` + 一个取数方法，不散落多个 getter（旧仓 26 个 `explain*` 的反面教训）。
+  - **只放引擎不知道的**：五维 / PT / 阶段等已在引擎局面摘要里，View 不重复，避免双真源。
+  - **快照语义**：幂等、无副作用、不携带状态机；**何时取由宿主决定**（终端样例与局面摘要同点取，Web / Android 在自身渲染循环取）。
+  - **可演进**：类型 `non_exhaustive`；序列化按下游需要由剧本提供，引擎不背书传输格式。
+  - **不进契约 trait**：`Game` 不加取数方法；将来若需框架级通用取数（如搜索记录导出），另开显式 trait（`TerminalRecord` 同法），不塞进 `Game`。
+  - 细节（值快照 vs 借用视图、序列化方式）延后到 P7′，见 open_items。
 - **纪律**：接入新剧本时本仓核心 `git diff` 为空；确需新能力时回本仓按「带默认实现、非破坏」加钩子，禁止在剧本仓 fork 引擎。
 
 ---
@@ -100,6 +122,21 @@ miko_next/
 | 剧本仓 | 剧本专属类型 / 规则 / 策略 |
 
 推论：**类型在 core、trait 在 umasim** 时，`impl Game for <core 类型>` 一律写在 `umasim`（定义 trait 的一侧），依赖方向仍是 `umasim → core` 单向；不同类型混放不会产生反向依赖。
+
+### 下游接入与契约分层（2026-10-17 定）
+
+下游（Web / Android / DLL / 手机版）**只依赖引擎 crate**，主线样例不是必经之路：
+
+| 层 | 内容 | 对下游的承诺 |
+|---|---|---|
+| 引擎稳定面 | `umaai-core` / `umasim` / `umaai`：契约 trait、DTO、`Runner` / `Session`、协议解析 | 稳定；演进＝非破坏、带默认实现 |
+| 主线样例面 | `umaai-cli`（`render` / `PrintFrontend`）、`umaai-tools` | 不承诺；下游不得依赖 |
+| 测试支撑面 | `umaai-tests`（`Checker` / 夹具，`publish = false`）、`umasim::testutil` | 不上发布面；有需要再抽可发布薄包 |
+| 剧本面 | 剧本仓：剧本类型 / 规则 / 配置 / 数据 / 段解析 / 快照 DTO | 同左，lib 为主、bin 为辅 |
+
+- **入口装配点是 API 不是 bin**：宿主各自装配（终端 / Web / Android）；帧来源不绑文件通道——`Session::step(&RawFrame)` 已与 IO 解耦，通道只是主线的来源之一。
+- **平台守门**（已立项）：`wasm32-unknown-unknown` 与 Android NDK 目标各做一次**无终端依赖、无平台绑定依赖**的编译检查（见 §9「下游可用性改造」）。
+- **数据源**：下游常见内嵌 / 内存资产，`Data` / `Config` 现只有路径注入；`DataSource`（目录 / 内嵌 / 内存多源）落地前，下游只能先落盘（见 open_items）。
 
 ---
 
@@ -214,7 +251,7 @@ miko_next/
 
 | 项 | 定稿 |
 |---|---|
-| 呈现件形态 | `umaai-cli` 拆为 **lib 呈现件 + 瘦 bin**：`lib` 出工具件（`render`）与样例实现（`frontend`），本仓入口逻辑（`cli`）也在库里以便集成测试注入输出；bin 只收参数、报告失败、给退出码。剧本仓 bin 直接复用，**pub 面不承诺稳定**，按 git `rev` 钉住 |
+| 呈现件形态 | `umaai-cli` 拆为 **lib 呈现件 + 瘦 bin**：`lib` 出工具件（`render`）与样例实现（`frontend`），本仓入口逻辑（`cli`）也在库里以便集成测试注入输出；bin 只收参数、报告失败、给退出码。终端剧本仓入口可直接复用，**pub 面不承诺稳定**，按 git `rev` 钉住；Web / Android 宿主自实现 `Frontend` |
 | 定位 | 本 crate 是**控制台 App 的工具件 + 样例实现**：呈现原语与显示宽度/折行处理在这里做一次，剧本仓不必重复踩坑 |
 | 分层纪律 | **只有 `render/table.rs` 接触表格库**（换库只改一处）；**只有 `render/term.rs` 读环境与探测终端**；**契约 trait 永不加呈现方法**（旧仓把呈现声明成 trait 方法是问题根源） |
 | 表格渲染 | 选表格库（非 TUI 框架）：要的是行 / 列合并、按转义序列计宽、显式宽度策略；宽度由调用方给出，重定向与测试的输出才可复现 |
@@ -222,8 +259,19 @@ miko_next/
 | 局面呈现 | 引擎 `Frontend` 新增**局面摘要事件**（带默认实现、阶段闭合后下发），只带剧本无关字段；剧本专属资源信息由剧本侧自持 |
 | 冒烟范围 | **只跑单局**（批量统计归 `umaai-tools`）；入口无子命令，等 P6′ 有 update / 探针再引入 |
 | 剧本特化渲染 | 剧本自己的分布 / 资源面板**延后到 P7′**（等空剧本模板有真实消费者时定形），本仓只出与剧本无关的原语 |
-| 选择器口径 | 入口只认基础局与契约参考训练员，**未知选择器报错并列出可用值**；剧本装配是剧本仓自带 bin 的事 |
+| 选择器口径 | 入口只认基础局与契约参考训练员，**未知选择器报错并列出可用值**；剧本装配是剧本仓入口（装配 API 或 bin）的事 |
 | 默认马娘 | 默认配置改用**目标宽松**的马娘，使随机训练员也能跑满全部回合；测试夹具与默认层保持同值并加断言守门 |
+
+### 下游可用性改造（2026-10-17 立项，未开工）
+
+动机：下游只依赖引擎 crate（见 §3「下游接入与契约分层」），现状尚有平台绑定与数据源限制；先定形态与接缝，再补平台面（插在 P6′ 前后）。帧通道已解耦，剩余项按需开工。
+
+| 项 | 内容 | 状态 |
+|---|---|---|
+| 文件通道特性化 | 文件监听依赖只在文件通道使用 → 改成可选特性 `file-channel`（默认开）；关闭时下游经 `Session::step` 喂帧 | ✅ 已完成（帧形态常驻，监听与稳定读在特性下；特性按**传输类别**命名而不是按单个文件名，故不叫 `urafile`） |
+| 并行特性化 | 并行库只在搜索的批量 rollout 使用 → 改成可选特性（默认开），关闭时降级到**已有的串行分支** | 待开工 |
+| 数据源扩展 | `Data` / `Config` 从「路径注入」扩到「目录 / 内嵌 / 内存多源」，松开「根必是路径」的假设 | 待开工 |
+| 跨目标守门 | CI 增 `wasm32-unknown-unknown` 与 Android NDK 目标的编译检查，防平台绑定依赖回潮 | 待开工（暂无 wasm / Android 消费方） |
 
 ---
 

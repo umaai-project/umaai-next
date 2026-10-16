@@ -3,6 +3,11 @@ name = "umaai"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# 文件通道（目录监听 + 稳定读）：默认开启；下游自己喂帧时可关掉以去掉文件监听依赖
+default = ["file-channel"]
+file-channel = ["dep:notify"]
+
 [dependencies]
 umaai-core.workspace = true
 umasim.workspace = true
@@ -11,4 +16,4 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 rand.workspace = true
-notify.workspace = true
+notify = { workspace = true, optional = true }

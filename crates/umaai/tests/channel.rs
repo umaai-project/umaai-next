@@ -4,6 +4,8 @@
 //! 手动执行：`cargo test -p umaai --release --test channel -- --ignored --nocapture`。
 //! 其余用例只依赖「启动兜底 + 超时」两条确定性路径，取帧一律带显式超时。
 
+#![cfg(feature = "file-channel")]
+
 mod common;
 
 use std::fs;

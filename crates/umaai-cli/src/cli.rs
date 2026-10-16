@@ -9,6 +9,7 @@
 
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anyhow::{Result, anyhow, bail};
 use umaai::Config;
@@ -69,7 +70,7 @@ impl Args {
 选项:
   --data-root <路径>  数据根（默认 gamedata，相对当前目录）
   --overlay <路径>    配置覆盖层文件（与默认层同构、字段可选）
-  --width <列数>      呈现宽度（默认探测终端，探测不到用 100）
+  --width <列数>      呈现宽度（默认探测终端，探测不到用 100；最小 40）
   --quiet             只出终局块
   --verbose           出每阶段行与决策明细
   --no-color          关闭着色
@@ -91,8 +92,8 @@ impl Args {
                 "--width" => {
                     let raw = value(&mut it, "--width")?;
                     let cols: usize = raw.parse().map_err(|_| anyhow!("--width 需要正整数，收到 \"{raw}\""))?;
-                    if cols == 0 {
-                        bail!("--width 必须 ≥ 1");
+                    if cols < term::MIN_WIDTH {
+                        bail!("--width 必须 ≥ {}（更窄会把表格里的 CJK 切坏）", term::MIN_WIDTH);
                     }
                     args.width = Some(cols);
                 }
@@ -178,14 +179,20 @@ fn build_trainer(cfg: &Config) -> Result<RandomTrainer> {
 /// 极简 stderr 日志器：消费 `output.log_level`
 ///
 /// 引擎自己不打印，诊断经 `log` 门面与 `umaai_core::diag` 出来后落到这里；不装日志器时
-/// 这些记录被静默丢弃。重复初始化（测试里多次调用）不报错。
-struct StderrLogger {
-    level: log::LevelFilter,
+/// 这些记录被静默丢弃。级别放在共享状态上，重复初始化（测试里多次调用）不报错且即时生效。
+struct StderrLogger;
+
+/// 生效的日志级别（`enabled` 每次读取，重装日志器后新级别也会作用到已装实例）
+static LEVEL: Mutex<log::LevelFilter> = Mutex::new(log::LevelFilter::Off);
+
+/// 当前生效的日志级别
+fn level() -> log::LevelFilter {
+    *LEVEL.lock().unwrap_or_else(|err| err.into_inner())
 }
 
 impl log::Log for StderrLogger {
     fn enabled(&self, meta: &log::Metadata<'_>) -> bool {
-        meta.level() <= self.level
+        meta.level() <= level()
     }
 
     fn log(&self, record: &log::Record<'_>) {
@@ -198,8 +205,8 @@ impl log::Log for StderrLogger {
 }
 
 /// 按级别名装日志器（级别名非法即报错，与配置层严格口径一致）
-fn init_logger(level: &str) -> Result<()> {
-    let filter = match level.to_ascii_lowercase().as_str() {
+fn init_logger(level_name: &str) -> Result<()> {
+    let filter = match level_name.to_ascii_lowercase().as_str() {
         "off" => log::LevelFilter::Off,
         "error" => log::LevelFilter::Error,
         "warn" => log::LevelFilter::Warn,
@@ -208,12 +215,13 @@ fn init_logger(level: &str) -> Result<()> {
         "trace" => log::LevelFilter::Trace,
         other => bail!("output.log_level 非法 \"{other}\"（可用: off / error / warn / info / debug / trace）"),
     };
+    *LEVEL.lock().unwrap_or_else(|err| err.into_inner()) = filter;
     log::set_max_level(filter);
     if filter == log::LevelFilter::Off {
         return Ok(());
     }
-    // 已装过（重复调用）不是错误
-    let _ = log::set_boxed_logger(Box::new(StderrLogger { level: filter }));
+    // 已装过（重复调用）不是错误；级别走静态，重复装也能同步
+    let _ = log::set_boxed_logger(Box::new(StderrLogger));
     Ok(())
 }
 
@@ -258,7 +266,7 @@ mod tests {
         Ok(())
     }
 
-    /// 层1：未知参数、缺值、非法宽度、互斥开关都要报错
+    /// 层1：未知参数、缺值、非法与过窄宽度、互斥开关都要报错
     #[test]
     fn test_parse_errors() {
         for bad in [
@@ -266,6 +274,7 @@ mod tests {
             vec!["--data-root"],
             vec!["--width", "abc"],
             vec!["--width", "0"],
+            vec!["--width", "39"],
             vec!["--quiet", "--verbose"],
         ] {
             let err = Args::parse(&argv(&bad)).expect_err(&format!("{bad:?} 应报错"));
@@ -284,11 +293,16 @@ mod tests {
         Ok(())
     }
 
-    /// 层1：日志级别名非法即报错，合法即通过
+    /// 层1：级别名非法即报错；重复初始化时新级别即时生效（含提升级别）
     #[test]
     fn test_init_logger_levels() {
         assert!(init_logger("info").is_ok());
-        assert!(init_logger("OFF").is_ok());
+        assert_eq!(level(), log::LevelFilter::Info);
         assert!(init_logger("noisy").is_err());
+        assert_eq!(level(), log::LevelFilter::Info, "非法级别不得改动生效级别");
+        assert!(init_logger("trace").is_ok());
+        assert_eq!(level(), log::LevelFilter::Trace, "重复初始化应把级别抬上去");
+        assert!(init_logger("off").is_ok());
+        assert_eq!(level(), log::LevelFilter::Off);
     }
 }

@@ -8,6 +8,7 @@
 //! 剧本相关的东西全在宿主：帧 → 局面的构造（`build`，含 persons 构造与阶段覆写）、剧本
 //! 参数（[`BaseParams`]）、训练员、决策源、前端。引擎不含剧本常量，也不打印、不落盘。
 
+#[cfg(feature = "file-channel")]
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -22,7 +23,9 @@ use crate::config::Config;
 use crate::decision::{DecisionRecord, DecisionSource};
 use crate::frontend::{Frontend, GameStart, RunStart, StageCtx};
 use crate::protocol::base::{BaseParams, FrameNote, FrameOutcome, parse_base_status};
-use crate::protocol::channel::{ChannelNote, FileChannel, FrameKind, RawFrame};
+#[cfg(feature = "file-channel")]
+use crate::protocol::channel::FileChannel;
+use crate::protocol::channel::{ChannelNote, FrameKind, RawFrame};
 use crate::protocol::final_score::FinalScoreFrame;
 use crate::record::LuckScorer;
 use crate::runner::Summary;
@@ -161,6 +164,7 @@ impl<'a, G: Game, T: Trainer<G>> Session<'a, G, T> {
     /// CLI 的顶层循环按「一局」调用一次；通道自愈痕迹经 [`SessionSummary::notes`] 交回。
     /// 单帧处理失败原样返回 `Err`（宿主决定是否继续与如何呈现）；终局帧被拒不算失败，
     /// 会继续等匹配的终局帧。
+    #[cfg(feature = "file-channel")]
     pub fn run(&mut self, ch: &mut FileChannel, timeout: Duration, idle_limit: Duration) -> Result<SessionSummary> {
         let mut notes = Vec::new();
         let mut idle_since = Instant::now();
@@ -336,7 +340,8 @@ impl<'a, G: Game, T: Trainer<G>> Session<'a, G, T> {
         Ok(out)
     }
 
-    /// 组装会话汇总
+    /// 组装会话汇总（仅通道驱动路径使用）
+    #[cfg(feature = "file-channel")]
     fn summary(&self, stop: RunStop, notes: Vec<ChannelNote>) -> SessionSummary {
         SessionSummary {
             stop,

@@ -10,6 +10,7 @@
 //! - 本层不含任何剧本常量：剧本 ID、友人卡、友人首次事件都由宿主经
 //!   [`BaseParams`] 注入或被调用方判定。
 //! - 帧 → 局面的转换只覆盖通用字段；人头构造与回合阶段归剧本侧。
+//! - 帧的**形态**常驻；目录监听（`channel` 子模块）在 `file-channel` 特性下，见该模块文档。
 
 pub mod base;
 pub mod channel;
@@ -20,6 +21,8 @@ pub use base::{
     BaseParams, BasePersonStatus, BaseStatus, EventOwner, EventRef, FrameNote, FrameOutcome, decode_event_id,
     parse_base_status,
 };
-pub use channel::{ChannelNote, FileChannel, FrameKind, RawFrame, plugin_dir};
+#[cfg(feature = "file-channel")]
+pub use channel::FileChannel;
+pub use channel::{ChannelNote, FrameKind, RawFrame, plugin_dir};
 pub use final_score::FinalScoreFrame;
 pub use story::{StoryChoice, StoryEffectValue, StoryStatus};

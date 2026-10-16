@@ -21,9 +21,11 @@ pub use config::Config;
 pub use decision::{Candidate, DecisionRecord, DecisionSource, LuckAttach};
 pub use frontend::{ErrorEvent, ErrorKind, Frontend, GameStart, RunStart, StageCtx, UmaStatus};
 pub use luck::{LuckScoreSnapshot, LuckScoreTracker, raw_from_display, to_display};
+#[cfg(feature = "file-channel")]
+pub use protocol::FileChannel;
 pub use protocol::{
-    BaseParams, BasePersonStatus, BaseStatus, ChannelNote, FileChannel, FinalScoreFrame, FrameKind, FrameNote,
-    FrameOutcome, RawFrame, StoryStatus, parse_base_status, plugin_dir,
+    BaseParams, BasePersonStatus, BaseStatus, ChannelNote, FinalScoreFrame, FrameKind, FrameNote, FrameOutcome,
+    RawFrame, StoryStatus, parse_base_status, plugin_dir,
 };
 pub use record::LuckScorer;
 pub use runner::{Runner, Summary};

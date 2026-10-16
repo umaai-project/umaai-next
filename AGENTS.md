@@ -20,6 +20,7 @@
 - [docs/game/](docs/game/README.md)：游戏机制（规则 / 实现细节 / 术语 / 固有效果）
 - [docs/changelog.md](docs/changelog.md)：变更日志（极简，每条一行）
 - [docs/issues.md](docs/issues.md)：问题记录（状态 + 排查过程）
+- [docs/tests_overview.md](docs/tests_overview.md)：测试一览（分层 + 一行一测试）
 - [docs/project_context.md](docs/project_context.md)：项目上下文（最新代码结构）
 - [docs/notes/](docs/notes/open_items.md)：开发笔记与待决事项
 
@@ -59,7 +60,7 @@
 1. **分层与断言**：单元测试（内联，私有细节 / 纯函数）用 `assert`；**集成测试（`tests/`）不用 `assert`**，用 `print` 类输出 + `Result`返回值供 Agent 检查；baseline 测试用「比对后返回 `Err` / 非零退出码」自动判定。
 2. **失败信号**：集成测试统一经 `umaai-tests` 的 `Checker`（打印 + 聚合 + 返回 `Err`），保证 `cargo test` 有失败信号。
 3. 跨 crate 的集成 / 端到端测试放 `crates/umaai-tests/tests/`；共享夹具经 testkit 暴露，禁止 `#[path = "..."]` 跨目录引入。
-4. 新功能需在当前文件或对应 `tests/` 补测试，并随实现更新 `test_overview` 文档。
+4. 新功能需在当前文件或对应 `tests/` 补测试，并随实现更新 [`docs/tests_overview.md`](docs/tests_overview.md)（测试一览）。
 5. 测试工作目录为 workspace 根；需要时用公共函数定位。
 6. **Release 模式**：所有 test 与 binary 用 Release 编译。
 

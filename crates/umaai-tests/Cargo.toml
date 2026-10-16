@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
+[features]
+# 文件通道透传：默认开启；关掉后引擎侧的文件监听依赖一起去掉（真通道用例同步不编）
+default = ["file-channel"]
+file-channel = ["umaai/file-channel"]
+
 [dependencies]
 umaai-core.workspace = true
 umasim.workspace = true

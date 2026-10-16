@@ -7,17 +7,22 @@
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
+#[cfg(feature = "file-channel")]
 use std::fs;
+#[cfg(feature = "file-channel")]
 use std::time::Duration;
 
 use anyhow::{Result, bail};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+#[cfg(feature = "file-channel")]
+use umaai::FileChannel;
+#[cfg(feature = "file-channel")]
 use umaai::protocol::channel::{FRAME_FINAL_SCORE, FRAME_THIS_TURN, plugin_dir};
 use umaai::protocol::story::{StoryChoice, StoryEffectValue};
 use umaai::{
-    BaseParams, BaseStatus, Candidate, Config, DecisionRecord, DecisionSource, FileChannel, FinalScoreFrame, FrameKind,
-    FrameRoute, Frontend, GameStart, RawFrame, RunStart, RunStop, Session, StageCtx, StoryStatus, Summary,
+    BaseParams, BaseStatus, Candidate, Config, DecisionRecord, DecisionSource, FinalScoreFrame, FrameKind, FrameRoute,
+    Frontend, GameStart, RawFrame, RunStart, RunStop, Session, StageCtx, StoryStatus, Summary,
 };
 use umaai_core::Data;
 use umaai_core::testing::data_root;
@@ -369,6 +374,7 @@ fn session_frame_sequence_end_to_end() -> Result<()> {
 }
 
 /// 真通道端到端：`FileChannel` → `Session::run`（依赖文件系统事件派发，默认不跑）
+#[cfg(feature = "file-channel")]
 #[test]
 #[ignore = "走真 watcher（手动：cargo test -p umaai-tests --release --test session_basic -- --ignored --nocapture）"]
 fn session_runs_on_real_channel() -> Result<()> {
