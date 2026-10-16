@@ -19,10 +19,10 @@
 |---|---|---|
 | `umaai-core` | 核心层：纯 schema/DTO + 数据加载 + 零依赖纯函数工具（统计原语 / CRN 种子表）+ RNG 三流 + 统一错误 + 诊断输出机制 | `rng` / `error` / `diag` / `array` / `stats` / `crn` / `flags` / `race_mask` / `gamedata` / `data` 已落地 |
 | `umasim` | 计算层：带行为的领域类型 + 契约 trait（`Game` / `Trainer` / 表来源钩子）+ 领域算法（搜索 / 训练员 / NN）；无终端依赖 | `game/{mod,uma,support_card,inherit,traits}`、`game/base/{mod,person,action,basic}`、`search/{mod,config,result,searchable,terminal,flat_search}`、`trainer` 已落地；呈现 / 协议件延后到上层阶段 |
-| `umaai` | 引擎 lib：`Runner` 主循环 / 协议解析（单场景直连）/ `Config` / 决策编排 / luck / record（无终端与 IO 重依赖） | `config`（默认层 + 覆盖层 + 具名预设）、`frontend`（事件契约）、`decision`（决策 DTO + 决策源接缝）、`runner`（离线一局驱动 + 终局汇总）已落地；`protocol` / `record` / `luck` 待后续阶段 |
+| `umaai` | 引擎 lib：`Runner` 主循环 / 协议解析（单场景直连）/ `Config` / 决策编排 / luck / record（无终端与 IO 重依赖） | `config`（默认层 + 覆盖层 + 具名预设）、`frontend`（事件契约）、`decision`（决策 DTO + 决策源接缝）、`runner`（离线一局驱动 + 终局汇总）、`luck`（运气分与显示分换算）、`record`（运气分装配挂载）、`protocol`（帧通用段 / 事件段 / 终局帧）已落地；帧通道与会话（单场景直连）待后续阶段 |
 | `umaai-cli` | print 前端（`Frontend` 实现）+ 入口层功能；终端呈现唯一出口 | 骨架（`main` 仅占位输出） |
 | `umaai-tools` | 探针 / 基准 / 策略×世界接口；dev 重依赖唯一出口 | 骨架 |
-| `umaai-tests` | 集成 / 端到端 / baseline 测试；`Checker`（print + 聚合 + 返回 `Err`）+ 共享夹具 | `Checker` 与 `testing` 夹具、`tests/basic_game.rs`（基础局固定种子端到端）、`tests/search_smoke.rs`（搜索端到端 + 可复现性守门）、`tests/runner_basic.rs`（经引擎运行与直接模拟逐位一致）已落地 |
+| `umaai-tests` | 集成 / 端到端 / baseline 测试；`Checker`（print + 聚合 + 返回 `Err`）+ 共享夹具 | `Checker` 与 `testing` 夹具、`tests/basic_game.rs`（基础局固定种子端到端）、`tests/search_smoke.rs`（搜索端到端 + 可复现性守门）、`tests/runner_basic.rs`（经引擎运行与直接模拟逐位一致）已落地；`crates/umaai/tests/` 另有配置 / 运气分 / 协议集成测试与真机帧夹具（只保留通用段） |
 
 ## 依赖与配置
 
@@ -43,7 +43,7 @@
 ### 数据（`gamedata/`）
 
 - 单一数据根（只读输入，平铺）：`cardDB.json` / `umaDB.json` / `events.json` / `text_data_dict.json` / `constants.json` / `default_config.toml`；`manifest.json` 声明 schema 版本与必需文件，是载入时的唯一校验入口（当前只覆盖五张静态表，配置文件由引擎配置层单独载入）。
-- `default_config.toml` 是**唯一默认源**（Rust 侧不留同名字段缺省），按职责分段：`sim`（剧本与训练员选择器、马娘 / 卡组 / 继承 / 种子 / 局数 / 等级表预设名）、`search`（搜索参数）、`record`（记录开关与根目录）、`output`（日志级别）、`presets`（具名预设表，现为比赛等级表）。剧本专属配置段不进本仓，由剧本仓自持。
+- `default_config.toml` 是**唯一默认源**（Rust 侧不留同名字段缺省），按职责分段：`sim`（剧本与训练员选择器、马娘 / 卡组 / 继承 / 种子 / 局数 / 等级表预设名）、`search`（搜索参数）、`record`（记录开关、根目录、运气分显示分换算加成）、`output`（日志级别）、`presets`（具名预设表，现为比赛等级表）。剧本专属配置段不进本仓，由剧本仓自持。
 - 剧本数据不进本仓；加载收敛到 `umaai-core` 的单一 `data` 模块（值类型 `Data` + 全局 `init` / `get` / `try_get`，载入不写日志），**路径由宿主注入**，引擎不硬编码；引擎配置同为路径注入（默认层 + 可选覆盖层）。
 - 运行输出（`logs/` 等）不入数据根。
 

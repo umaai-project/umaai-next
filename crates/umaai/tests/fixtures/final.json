@@ -1,0 +1,30 @@
+{
+ "scenarioId": 14,
+ "single_mode_chara_id": 6266,
+ "umaId": 114101,
+ "umaStar": 3,
+ "turn": 77,
+ "state": 3,
+ "playing_state": 5,
+ "fiveStatus": [
+  3190,
+  2106,
+  1818,
+  1170,
+  2380
+ ],
+ "fiveStatusLimit": [
+  3190,
+  2488,
+  2204,
+  2240,
+  2476
+ ],
+ "skillPt": 8863,
+ "totalHints": 323,
+ "skillPtSpent": 0,
+ "inheritGains": [
+  247,
+  273
+ ]
+}

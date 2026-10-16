@@ -1,0 +1,219 @@
+{
+ "baseGame": {
+  "scenarioId": 14,
+  "umaId": 109701,
+  "umaStar": 4,
+  "islegal": true,
+  "turn": 31,
+  "vital": 58,
+  "maxVital": 112,
+  "motivation": 5,
+  "fiveStatus": [
+   1132,
+   555,
+   552,
+   382,
+   605
+  ],
+  "fiveStatusLimit": [
+   3220,
+   2440,
+   2202,
+   2200,
+   2488
+  ],
+  "skillPt": 2100,
+  "skillScore": 0,
+  "totalHints": 178,
+  "trainLevelCount": [
+   12,
+   11,
+   5,
+   4,
+   13
+  ],
+  "ptScoreRate": 2.0,
+  "failureRateBias": 0,
+  "isQieZhe": false,
+  "isXiaoQie": true,
+  "isAiJiao": false,
+  "PositiveThinkingCount": 0,
+  "isRefreshMind": false,
+  "isIll": false,
+  "LuckyCount": 0,
+  "zhongMaBlueCount": [
+   9,
+   3,
+   0,
+   0,
+   6
+  ],
+  "saihou": 0,
+  "isRacing": false,
+  "cardId": [
+   303051,
+   302974,
+   302894,
+   303044,
+   302424,
+   303174
+  ],
+  "persons": [
+   {
+    "personType": 1,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": false,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": false,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": false,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": true,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": true,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": false,
+    "cardRecord": 0
+   }
+  ],
+  "personDistribution": [
+   [
+    8,
+    8,
+    -1,
+    -1,
+    -1
+   ],
+   [
+    3,
+    4,
+    5,
+    6,
+    -1
+   ],
+   [
+    0,
+    1,
+    8,
+    -1,
+    -1
+   ],
+   [
+    7,
+    8,
+    8,
+    -1,
+    -1
+   ],
+   [
+    2,
+    8,
+    -1,
+    -1,
+    -1
+   ]
+  ],
+  "lockedTrainingId": -1,
+  "friendship_noncard_yayoi": 36,
+  "friendship_noncard_reporter": 18,
+  "friend_stage": 2,
+  "friend_outgoingUsed": 1,
+  "playing_state": 1,
+  "isAfterTraining": false,
+  "isFullGame": false,
+  "raceHistory": [
+   11,
+   23,
+   30
+  ],
+  "keyEvents": [
+   830242002,
+   830289001
+  ],
+  "inheritGains": [
+   165
+  ],
+  "skillPtSpent": 0,
+  "single_mode_chara_id": 6264,
+  "story": {
+   "Id": 801041001,
+   "Name": "優等生の一石二鳥！！",
+   "TriggerName": "[支援卡]サクラバクシンオー",
+   "Choices": [
+    [
+     {
+      "SuccessEffectValue": {
+       "Values": [
+        15,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        5,
+        0
+       ],
+       "SkillNames": [],
+       "Extras": []
+      },
+      "Option": "雑巾がけで、スピード強化！",
+      "SuccessEffect": "スピード+15、サクラバクシンオーの絆ゲージ+5",
+      "FailedEffect": ""
+     }
+    ],
+    [
+     {
+      "SuccessEffectValue": {
+       "Values": [
+        5,
+        0,
+        10,
+        0,
+        0,
+        0,
+        0,
+        0,
+        5,
+        0
+       ],
+       "SkillNames": [],
+       "Extras": []
+      },
+      "Option": "資料室の整理で、パワーも強化！",
+      "SuccessEffect": "スピード+5、パワー+10、サクラバクシンオーの絆ゲージ+5",
+      "FailedEffect": ""
+     }
+    ]
+   ]
+  },
+  "source": "event"
+ }
+}

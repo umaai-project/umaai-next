@@ -11,9 +11,17 @@
 pub mod config;
 pub mod decision;
 pub mod frontend;
+pub mod luck;
+pub mod protocol;
+pub mod record;
 pub mod runner;
 
 pub use config::Config;
-pub use decision::{Candidate, DecisionRecord, DecisionSource};
+pub use decision::{Candidate, DecisionRecord, DecisionSource, LuckAttach};
 pub use frontend::{ErrorEvent, ErrorKind, Frontend, GameStart, RunStart, StageCtx};
+pub use luck::{LuckScoreSnapshot, LuckScoreTracker, raw_from_display, to_display};
+pub use protocol::{
+    BaseParams, BasePersonStatus, BaseStatus, FinalScoreFrame, FrameNote, FrameOutcome, StoryStatus, parse_base_status,
+};
+pub use record::LuckScorer;
 pub use runner::{Runner, Summary};

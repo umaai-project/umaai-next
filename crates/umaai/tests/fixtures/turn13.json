@@ -1,0 +1,225 @@
+{
+ "baseGame": {
+  "scenarioId": 14,
+  "umaId": 109701,
+  "umaStar": 4,
+  "islegal": true,
+  "turn": 13,
+  "vital": 44,
+  "maxVital": 104,
+  "motivation": 5,
+  "fiveStatus": [
+   371,
+   216,
+   234,
+   215,
+   269
+  ],
+  "fiveStatusLimit": [
+   3196,
+   2432,
+   2200,
+   2200,
+   2464
+  ],
+  "skillPt": 724,
+  "skillScore": 0,
+  "totalHints": 53,
+  "trainLevelCount": [
+   3,
+   2,
+   0,
+   1,
+   5
+  ],
+  "ptScoreRate": 2.0,
+  "failureRateBias": 0,
+  "isQieZhe": false,
+  "isXiaoQie": true,
+  "isAiJiao": false,
+  "PositiveThinkingCount": 0,
+  "isRefreshMind": false,
+  "isIll": false,
+  "LuckyCount": 0,
+  "zhongMaBlueCount": [
+   9,
+   3,
+   0,
+   0,
+   6
+  ],
+  "saihou": 0,
+  "isRacing": false,
+  "cardId": [
+   303051,
+   302974,
+   302894,
+   303044,
+   302424,
+   303174
+  ],
+  "persons": [
+   {
+    "personType": 1,
+    "charaId": 0,
+    "friendship": 69,
+    "isHint": false,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 80,
+    "isHint": false,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": false,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": true,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 98,
+    "isHint": false,
+    "cardRecord": 0
+   },
+   {
+    "personType": 2,
+    "charaId": 0,
+    "friendship": 100,
+    "isHint": false,
+    "cardRecord": 0
+   }
+  ],
+  "personDistribution": [
+   [
+    4,
+    8,
+    8,
+    -1,
+    -1
+   ],
+   [
+    5,
+    -1,
+    -1,
+    -1,
+    -1
+   ],
+   [
+    1,
+    6,
+    8,
+    -1,
+    -1
+   ],
+   [
+    3,
+    7,
+    8,
+    8,
+    -1
+   ],
+   [
+    2,
+    8,
+    -1,
+    -1,
+    -1
+   ]
+  ],
+  "lockedTrainingId": -1,
+  "friendship_noncard_yayoi": 4,
+  "friendship_noncard_reporter": 0,
+  "friend_stage": 0,
+  "friend_outgoingUsed": 0,
+  "playing_state": 1,
+  "isAfterTraining": false,
+  "isFullGame": true,
+  "raceHistory": [
+   11
+  ],
+  "keyEvents": [
+   830137001,
+   809001101,
+   830297001,
+   830304001
+  ],
+  "inheritGains": [],
+  "skillPtSpent": 0,
+  "single_mode_chara_id": 6264,
+  "story": {
+   "Id": 809001104,
+   "Name": "深夜のファミレス、あとラーメン",
+   "TriggerName": "[支援卡]駿川たづな",
+   "Choices": [
+    [
+     {
+      "SuccessEffectValue": {
+       "Values": [
+        0,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        40,
+        5,
+        1
+       ],
+       "SkillNames": [],
+       "Extras": [
+        "「リフレッシュの心得」になる",
+        "お出かけ可能になる"
+       ]
+      },
+      "Option": "ご褒美が欲しいですよね！",
+      "SuccessEffect": "絆ゲージ+5、体力+40、やる気+1、賢さ+6、「リフレッシュの心得」になる、お出かけ可能になる",
+      "FailedEffect": ""
+     }
+    ],
+    [
+     {
+      "SuccessEffectValue": {
+       "Values": [
+        6,
+        0,
+        0,
+        0,
+        6,
+        0,
+        5,
+        0,
+        5,
+        1
+       ],
+       "SkillNames": [
+        "心惹かれて"
+       ],
+       "Extras": [
+        "「リフレッシュの心得」になる",
+        "お出かけ可能になる"
+       ]
+      },
+      "Option": "無計画は無計画で癖になる……",
+      "SuccessEffect": "絆ゲージ+5、やる気+1、スピード+6、賢さ+6、「リフレッシュの心得」になる、お出かけ可能になる、「心惹かれて」のヒントLv+5",
+      "FailedEffect": ""
+     }
+    ]
+   ]
+  },
+  "source": "event"
+ }
+}

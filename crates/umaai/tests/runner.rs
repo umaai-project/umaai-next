@@ -142,6 +142,7 @@ fn runner_full_game() -> Result<()> {
                 n: 8,
             },
         ],
+        luck: None,
         extra: None,
     };
     let src = StubSource::new(vec![sample.clone()]);

@@ -69,6 +69,8 @@ pub struct RecordConfig {
     pub enabled: bool,
     /// 记录根目录（相对路径按宿主工作目录解释）
     pub root: String,
+    /// 运气分显示分换算的每回合加成（旧仓沿用 70；仅影响运气分口径，不影响模拟）
+    pub luck_turn_bonus: i32,
 }
 
 /// 输出与日志参数
@@ -161,6 +163,12 @@ impl Config {
         }
         if self.sim.runs == 0 {
             bail!("sim.runs 必须 ≥ 1");
+        }
+        if self.record.luck_turn_bonus < 0 {
+            bail!(
+                "record.luck_turn_bonus 不得为负（当前 {}）",
+                self.record.luck_turn_bonus
+            );
         }
         let grades = self.race_grades()?;
         // 生涯比赛表覆盖回合 0-71，URA 回合 72-77 固定 G1 不进表
@@ -314,6 +322,7 @@ impl SearchOverlay {
 struct RecordOverlay {
     enabled: Option<bool>,
     root: Option<String>,
+    luck_turn_bonus: Option<i32>,
 }
 
 impl RecordOverlay {
@@ -323,6 +332,9 @@ impl RecordOverlay {
         }
         if let Some(v) = self.root {
             cfg.root = v;
+        }
+        if let Some(v) = self.luck_turn_bonus {
+            cfg.luck_turn_bonus = v;
         }
     }
 }
@@ -396,6 +408,7 @@ pt_favor_rate = 2.0
 [record]
 enabled = false
 root = "logs"
+luck_turn_bonus = 70
 
 [output]
 log_level = "info"
