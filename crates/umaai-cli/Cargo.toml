@@ -3,11 +3,25 @@ name = "umaai-cli"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "umaai_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "umaai-cli"
 path = "src/main.rs"
 
+[features]
+default = ["color"]
+# 着色门禁：关闭后不编译颜色依赖，呈现件退化为纯文本（剧本仓可 default-features = false 剔除）
+color = ["dep:colored"]
+
 [dependencies]
 umaai-core.workspace = true
+umasim.workspace = true
 umaai.workspace = true
 anyhow.workspace = true
+console.workspace = true
+log.workspace = true
+tabled.workspace = true
+colored = { workspace = true, optional = true }

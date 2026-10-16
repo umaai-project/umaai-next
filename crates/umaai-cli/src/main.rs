@@ -1,14 +1,26 @@
-//! # umaai-cli（print 前端）
+//! 本仓 CLI 的 thin bin：入口逻辑都在 `umaai_cli` 库里
 //!
-//! 终端依赖（着色 / 表格 / 进度 / 交互 / 日志）**只允许**出现在本 crate。
-//! 实现 `Frontend`，把事件渲染成人读文本 / 表格。
+//! 放在库里是为了让集成测试与下游直接调 [`umaai_cli::cli::run_from_args`] 并注入输出目标；
+//! bin 只负责收参数、报告失败、给退出码。
 //!
-//! 入口层功能也落在这里，例如「更新数据」（数据/程序更新的检查与执行，见方案 v2 的
-//! 「更新与分发」节）——但**更新逻辑不得进入引擎 lib**。
-//!
-//! 说明：bin 名暂用 `umaai-cli`；发布时 `umaai.exe` 的最终产物名在打包阶段另定。
+//! 更新器（数据 / 程序更新）是入口层职责，归 P6′；bin 名暂用 `umaai-cli`，发布产物的
+//! 最终名字在打包阶段定。
 
-fn main() -> anyhow::Result<()> {
-    println!("umaai-cli skeleton");
-    Ok(())
+use std::io::Write;
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    let argv: Vec<String> = std::env::args().collect();
+    let mut out = std::io::stdout();
+    match umaai_cli::cli::run_from_args(&argv, &mut out) {
+        Ok(()) => {
+            let _ = out.flush();
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            // 引擎在下发 `on_error` 之后仍把错误返回给调用方，此处统一打印一次因果链
+            eprintln!("错误: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
 }

@@ -385,7 +385,7 @@ mod tests {
 [sim]
 scenario = "basic"
 trainer = "random"
-uma = 101901
+uma = 100101
 cards = [302424, 302464]
 blue_count = [15, 3, 0, 0, 0]
 extra_count = [0, 30, 0, 0, 30, 30]
@@ -424,7 +424,7 @@ standard = {}
     #[test]
     fn test_parse_base() -> Result<()> {
         let cfg = Config::parse(&base(), None)?;
-        assert_eq!(cfg.sim.uma, 101901);
+        assert_eq!(cfg.sim.uma, 100101);
         assert_eq!(cfg.sim.cards.len(), 2);
         assert_eq!(cfg.search.search_n, 1024);
         assert_eq!(cfg.search.pt_favor_rate, 2.0);

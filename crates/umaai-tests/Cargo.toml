@@ -8,6 +8,7 @@ publish = false
 umaai-core.workspace = true
 umasim.workspace = true
 umaai.workspace = true
+umaai-cli.workspace = true
 anyhow.workspace = true
 rand.workspace = true
 serde_json.workspace = true

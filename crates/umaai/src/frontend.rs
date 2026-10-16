@@ -4,7 +4,8 @@
 //! JSON 事件流各取所需）。事件只带数据与机器可读键，人读文案由前端决定。
 //!
 //! `on_stage_begin` / `on_stage_end` 成对：引擎经单一出口下发（见 [`crate::Runner`]），
-//! 阶段内提前返回也会闭合，不靠各分支手写。
+//! 阶段内提前返回也会闭合，不靠各分支手写。局面摘要 [`UmaStatus`] 在阶段闭合之后下发，
+//! 因此它自己取失败时不会破坏这对事件。
 
 use serde::{Deserialize, Serialize};
 use umasim::game::StageId;
@@ -45,6 +46,32 @@ pub struct StageCtx {
     pub stage: StageId,
 }
 
+/// 阶段结束时的局面摘要（只带剧本无关字段）
+///
+/// 供回合面板一类的呈现消费。剧本专属资源信息（地域 / 诀窍 / 泡汤等）不进本结构，
+/// 由剧本侧自行呈现；剧本要补自己的字段时在剧本仓里另做事件。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UmaStatus {
+    /// 当前回合（0 基）
+    pub turn: i32,
+    /// 最大回合数
+    pub max_turn: i32,
+    /// 阶段位置（剧本自定的标识；引擎不解释语义）
+    pub stage: StageId,
+    /// 体力
+    pub vital: i32,
+    /// 体力上限
+    pub max_vital: i32,
+    /// 干劲 `[1, 5]`
+    pub motivation: i32,
+    /// 五维 `[速, 耐, 力, 根, 智]`
+    pub five_status: [i32; 5],
+    /// 当前总 PT（技能点 + Hint 折算）
+    pub pt: i32,
+    /// 累计 Hint 等级
+    pub total_hints: i32,
+}
+
 /// 错误类别（供前端分类渲染；引擎只给类别与细节，不给文案）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -80,6 +107,8 @@ pub trait Frontend {
     fn on_stage_begin(&mut self, _ctx: &StageCtx) {}
     /// 阶段结束
     fn on_stage_end(&mut self) {}
+    /// 阶段结束时的局面摘要（阶段成功后下发；与 [`Self::on_stage_end`] 同点，在其之后）
+    fn on_uma_status(&mut self, _status: &UmaStatus) {}
     /// 一次决策
     fn on_decision(&mut self, _rec: &DecisionRecord) {}
     /// 错误

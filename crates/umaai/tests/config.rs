@@ -21,7 +21,7 @@ fn load_base() -> Result<Config> {
 fn config_load_default() -> Result<()> {
     let mut c = Checks::new("配置默认层");
     let cfg = load_base()?;
-    c.check(cfg.sim.uma == 101901, "sim.uma 取自默认层");
+    c.check(cfg.sim.uma == 100101, "sim.uma 取自默认层");
     c.check(cfg.sim.cards.len() == 6, "sim.cards 六张");
     c.check(cfg.sim.seed == 42, "sim.seed 取自默认层");
     c.check(cfg.search.search_n == 1024, "search.search_n 取自默认层");

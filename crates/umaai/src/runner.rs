@@ -14,7 +14,7 @@ use umasim::game::{Game, Trainer};
 
 use crate::config::Config;
 use crate::decision::DecisionSource;
-use crate::frontend::{ErrorEvent, ErrorKind, Frontend, GameStart, RunStart, StageCtx};
+use crate::frontend::{ErrorEvent, ErrorKind, Frontend, GameStart, RunStart, StageCtx, UmaStatus};
 
 /// 一局终局汇总
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,6 +127,9 @@ impl<'a> Runner<'a> {
         self.fe.on_stage_end();
         res?;
         self.stages += 1;
+        // 局面摘要在阶段闭合之后下发：这里的 `?` 不破坏 on_stage_begin / on_stage_end 的成对
+        let status = Self::status(game)?;
+        self.fe.on_uma_status(&status);
         // 阶段边界取走决策上下文：实现方按「取走即清空」语义交付
         if let Some(src) = src
             && let Some(rec) = src.take_decision()
@@ -135,6 +138,22 @@ impl<'a> Runner<'a> {
             self.fe.on_decision(&rec);
         }
         Ok(())
+    }
+
+    /// 阶段结束时的局面摘要（只带剧本无关字段）
+    fn status<G: Game>(game: &G) -> Result<UmaStatus> {
+        let uma = game.uma();
+        Ok(UmaStatus {
+            turn: game.turn(),
+            max_turn: game.max_turn(),
+            stage: game.stage(),
+            vital: uma.vital,
+            max_vital: uma.max_vital,
+            motivation: uma.motivation,
+            five_status: uma.five_status,
+            pt: uma.total_pt()?,
+            total_hints: uma.total_hints,
+        })
     }
 
     /// 终局汇总（评分口径取静态数据的分界表）
