@@ -38,7 +38,7 @@
 
 | 规则章节 | 主要代码位置（`crates/umasim/src/`） |
 |---|---|
-| 回合与流程 | `game/mod.rs`（`TurnStage`、`Game`/`BaseAction` 枚举）、`game/traits.rs`（`Game::run_stage`/`next`） |
+| 回合与流程 | `game/stage.rs`（`StageId` 阶段位置标识）、`game/base/stage.rs`（基础局阶段机 `BasicStage`）、`game/traits.rs`（`Game::run_stage`/`next`） |
 | 育成阶段 / 年份 | `game/base/mod.rs`（`is_xiahesu`、`can_self_race`）、`game/base/basic.rs`（`BasicGame`） |
 | 开局与卡组 | `game/base/mod.rs::BaseGame::new`、`game/support_card.rs`、`gamedata/support_card.rs` |
 | 训练 | `game/traits.rs`（`calc_training_buff`/`calc_training_value`/`calc_training_failure_rate`/`distribute_*`）、`game/base/basic.rs::do_train` |
@@ -138,7 +138,7 @@
 | 动作前 | 未实现 |
 | 预测前 | 未实现（trainer 侧直调计算） |
 | 动作后 | 未实现（三剧本各自 open-code） |
-| 回合末 | 未实现（`TurnStage::End` 无人处理；RMJ / buff 倒计时都在剧本 `next()` 里做） |
+| 回合末 | 未实现（`BasicStage::End` 无人处理；RMJ / buff 倒计时都在剧本 `next()` 里做） |
 | 局结束后 | 已有（`Game::on_simulation_end`，默认空实现；当前仅温泉 override 且为空） |
 
 `ScenarioMeta` 覆盖现状：仅「回合数」部分实现（且硬编码 77）；剧本 id 有（12/14 常量）；显示名 / 等级提升回合 / 训练自动升级 / 是否有嘉宾 / 第二训练状态 / 联动角色均未抽象为元数据。

@@ -25,6 +25,7 @@
 | 13 | **层界（2026-10-15 定）**：`umaai-core` 只放**纯 schema/DTO + 数据加载 + 零依赖纯函数工具 + RNG + 统一错误**；**带行为的领域类型、全部契约 trait、领域算法归 `umasim`** |
 | 14 | **归属判据**：进 core 的门槛是「**跨算法复用且与游戏、与算法无关**」；「零依赖」只是必要条件，不构成理由 |
 | 15 | 核心层依赖口径：**轻量、跨平台、通用**的库（`serde` / `serde_json` / `thiserror` / `rand` 0.9 / `int-enum` / `log` 门面）；禁终端 / 网络 / 计算重依赖与平台相关件。呈现（着色 / 表格 / 交互）只在 `umaai-cli`；诊断与日志走核心层 `diag` 机制 + `log` 门面 |
+| 16 | **剧本仓形态（2026-10-17 拍板）**：剧本＝**独立仓**，以依赖引用本仓 `umaai-core` / `umasim` / `umaai`（开发期 `path`、稳定期 git `rev`）；**不 fork 本仓、不在本仓加剧本 crate**；剧本专属类型 / 规则 / 策略 / 协议段 / 配置 / 数据全在剧本仓；**剧本仓自带 bin**（入口装配点），本仓不反向依赖外仓 |
 
 ---
 
@@ -69,6 +70,14 @@ miko_next/
 └─ gamedata/        # 单一数据根（只读输入；剧本数据不进本仓）
 ```
 
+### 剧本仓形态（外仓，2026-10-17 定）
+
+- **形态**：独立仓，不在本 workspace；只依赖 `umaai-core` / `umasim` / `umaai`（`umaai-tests` / `umaai-tools` 为 `publish = false`，外仓拿不到）。
+- **内容**：剧本领域类型（`Game` / `ActionEnum` / `Person`）、剧本专属协议段解析、persons 构造与阶段自持（内部强类型枚举 + 中间状态在局面里，对外只投影 `StageId`）、决策（`Trainer` 或 `FlatSearchGame`）、剧本专属配置段与数据、测试夹具（真机帧）。
+- **依赖方式**：开发期 `path`（并列目录），稳定期 git `rev` / tag 钉住；若将来走 crates.io 需先确认包名占用。
+- **入口**：剧本仓自带 bin（`Session` 帧驱动 + 自实现 `Frontend`），本仓 CLI 不出剧本产物；若要复用本仓呈现件，先把 `umaai-cli` 拆出可依赖的 lib（归 P5′ 再定）。
+- **纪律**：接入新剧本时本仓核心 `git diff` 为空；确需新能力时回本仓按「带默认实现、非破坏」加钩子，禁止在剧本仓 fork 引擎。
+
 ---
 
 ## 3. crate 骨架与依赖铁律
@@ -86,7 +95,7 @@ miko_next/
 | 归属 | 内容 |
 |---|---|
 | `umaai-core` | 纯 schema/DTO（gamedata 静态数据类型）、数据加载（`Data` 单例 / 路径注入 / 校验）、零依赖纯函数工具（**通用统计原语**、**CRN 种子表**）、RNG 三流、统一错误、诊断输出（`diag!` 宏 / 运行时开关 / 抑制 guard） |
-| `umasim` | 带行为的领域类型（`Uma` / `FriendState` / `BaseGame` / `simulator` …）、全部契约 trait（`Game` / 剧本钩子 / 搜索 / 策略）、领域算法（`flat_search` / `trainer/*` / `neural/*`）、搜索与 NN 私有数据形态 |
+| `umasim` | 带行为的领域类型（`Uma` / `FriendState` / `BaseGame` / `BasicGame` …）、阶段位置标识（`StageId`，剧本自定数字；基础局阶段机 `BasicStage` 是基础局私有）、全部契约 trait（`Game` / 剧本钩子 / 搜索 / 策略）、领域算法（`flat_search` / `trainer/*` / `neural/*`）、搜索与 NN 私有数据形态 |
 | `umaai-cli` | 终端呈现（着色 / 表格 / 日志 / 交互）；`explain` 类方法改为返回数据或下沉本层 |
 | 剧本仓 | 剧本专属类型 / 规则 / 策略 |
 
@@ -186,9 +195,9 @@ miko_next/
 | **P2′** | `umasim` 基座：带行为的领域类型（uma / support_card / inherit / base，去剧本）+ 契约 trait（`Game` / `Trainer` / `TrainingValueSource`） | ✅ 已完成（剧本钩子 `ScenarioRules` / `ScenarioLifecycle` 经拍板延后到有具体剧本时，见 open_items #10；`simulator` 为旧仓空壳未移植） |
 | **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | ✅ 已完成（搜索评分为单轴口径，PT 偏好折算率归 `SearchConfig`；批量后端 / leaf 截断估值 / NN 样本导出延后，见 open_items #12–#14；`BasicGame` 接参考实现 + 随机训练员） |
 | **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | ✅ 已完成（P4a 配置层、P4b 前端契约与离线运行器、P4c 运气分与记录装配、P4d 协议通用段 / 终局帧 / 帧通道 / 帧驱动会话；记录落盘与入口层接线归后续阶段） |
-| **P5′** | `umaai-cli`：呈现全入 cli；`BasicGame` 跑满回合冒烟 | — |
+| **P5′** | `umaai-cli`：呈现全入 cli；`BasicGame` 跑满回合冒烟（呈现件是否拆 lib 化以复用给剧本仓 bin，开工时按§2 定） | — |
 | **P6′** | `umaai-tools`：探针 / bench / baseline runner + `--update` | — |
-| **P7′** | 空剧本模板 + 文档（机制 / 契约 / 术语）+ 验收 | — |
+| **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | — |
 
 ### P4′ 执行定稿（2026-10-17 拍板）
 

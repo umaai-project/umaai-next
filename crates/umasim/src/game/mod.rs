@@ -1,45 +1,26 @@
 //! 游戏通用枚举与状态（剧本无关）
 //!
-//! 回合阶段 / 训练人头类型 / 友人状态系列，被各剧本 `Game` 实现共用；
-//! 具体剧本类型不在此层（见方案 v2 §3 层界）。
+//! 阶段标识 / 训练人头类型 / 友人状态系列，被各剧本 `Game` 实现共用；
+//! 具体剧本类型与阶段机不在此层（见方案 v2 §3 层界）。
 
 pub mod base;
 pub mod inherit;
+pub mod stage;
 pub mod support_card;
 pub mod traits;
 pub mod uma;
 
 use anyhow::{Result, anyhow};
-use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, ChoiceResult, EventChoice, EventData};
 
 pub use base::*;
 pub use inherit::InheritInfo;
+pub use stage::StageId;
 pub use support_card::*;
 pub use traits::*;
 pub use uma::*;
-
-/// 回合阶段
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Sequence)]
-pub enum TurnStage {
-    /// 1. 回合开始
-    #[default]
-    Begin,
-    /// 2. 分配人头前，随机事件
-    Distribute,
-    // --- 可操作部分
-    /// 3. 选择剧本buff前
-    StoryShop,
-    /// 4. 选择训练或比赛
-    Train,
-    /// 5. 回合后事件
-    AfterTrain,
-    // ---
-    /// 6. 结束，剧本结算
-    End,
-}
 
 /// 训练人头类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

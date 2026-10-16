@@ -11,14 +11,15 @@
 - 依赖方向：`umaai-cli` → `umaai` → `umasim` → `umaai-core`；`umaai-tools` / `umaai-tests` 依赖前三者且 `publish = false`，不进发布产物。
 - 层界判据：进 `umaai-core` 的门槛是「**跨算法复用且与游戏、与算法无关**」（「零依赖」只是必要条件）。类型在 core、trait 在 umasim 时，trait impl 写在 `umasim` 一侧。
 - workspace 根即项目根（`AGENTS.md` 所在目录）。
-- 现状：`umaai-core` 已落地通用机制与静态数据层（RNG 三流、统一错误、诊断输出机制、属性数组工具、通用统计原语与增量矩统计、CRN 种子表、局面状态标识、gamedata 纯 schema/DTO、数据加载与校验）；`umasim` 已落地规则基座与契约 trait（通用枚举 / 友人状态 / 继承 / 马娘 / 支援卡 / 基础局状态与动作 / 无剧本基础局；`Person` / `ActionEnum` / `Game` / `Trainer` / `TrainingValueSource`）、搜索框架（扁平搜索内核 + 剧本适配层 + 终局多维记录）与契约参考训练员；`umaai` 已落地配置层、前端事件契约、离线运行器、运气分与记录装配、协议层（通用段 / 事件段 / 终局帧 / 帧通道）与帧驱动会话（记录落盘待有真实消费者）；`umaai-cli` / `umaai-tools` 仍为骨架。
+- 剧本（外仓）：独立仓，依赖引用本仓 `umaai-core` / `umasim` / `umaai`，**自带 bin**（入口装配点），本仓不反向依赖；剧本专属类型 / 协议段 / 配置 / 数据与测试夹具均在外仓（2026-10-17 拍板，见 plan §2「剧本仓形态」）
+- 现状：`umaai-core` 已落地通用机制与静态数据层（RNG 三流、统一错误、诊断输出机制、属性数组工具、通用统计原语与增量矩统计、CRN 种子表、局面状态标识、gamedata 纯 schema/DTO、数据加载与校验）；`umasim` 已落地规则基座与契约 trait（通用枚举 / 阶段位置标识 `StageId` / 友人状态 / 继承 / 马娘 / 支援卡 / 基础局状态与动作 / 无剧本基础局及其私有阶段机 `BasicStage`；`Person` / `ActionEnum` / `Game` / `Trainer` / `TrainingValueSource`）、搜索框架（扁平搜索内核 + 剧本适配层 + 终局多维记录）与契约参考训练员；`umaai` 已落地配置层、前端事件契约、离线运行器、运气分与记录装配、协议层（通用段 / 事件段 / 终局帧 / 帧通道）与帧驱动会话（记录落盘待有真实消费者）；`umaai-cli` / `umaai-tools` 仍为骨架。
 
 ### crate 定位
 
 | crate | 定位 | 现状 |
 |---|---|---|
 | `umaai-core` | 核心层：纯 schema/DTO + 数据加载 + 零依赖纯函数工具（统计原语 / CRN 种子表）+ RNG 三流 + 统一错误 + 诊断输出机制 | `rng` / `error` / `diag` / `array` / `stats` / `crn` / `flags` / `race_mask` / `gamedata` / `data` 已落地 |
-| `umasim` | 计算层：带行为的领域类型 + 契约 trait（`Game` / `Trainer` / 表来源钩子）+ 领域算法（搜索 / 训练员 / NN）；无终端依赖 | `game/{mod,uma,support_card,inherit,traits}`、`game/base/{mod,person,action,basic}`、`search/{mod,config,result,searchable,terminal,flat_search}`、`trainer` 已落地；呈现 / 协议件延后到上层阶段 |
+| `umasim` | 计算层：带行为的领域类型 + 契约 trait（`Game` / `Trainer` / 表来源钩子）+ 领域算法（搜索 / 训练员 / NN）；无终端依赖 | `game/{mod,stage,uma,support_card,inherit,traits}`、`game/base/{mod,stage,person,action,basic}`、`search/{mod,config,result,searchable,terminal,flat_search}`、`trainer` 已落地；呈现 / 协议件延后到上层阶段 |
 | `umaai` | 引擎 lib：`Runner` 主循环 / 协议解析（单场景直连）/ `Config` / 决策编排 / luck / record（无终端与 IO 重依赖） | `config`（默认层 + 覆盖层 + 具名预设）、`frontend`（事件契约）、`decision`（决策 DTO + 决策源接缝）、`runner`（离线一局驱动 + 终局汇总）、`luck`（运气分与显示分换算）、`record`（运气分装配挂载）、`protocol`（帧通用段 / 事件段 / 终局帧 / 帧通道）、`session`（帧驱动会话：一帧一决策 + 终局裁决）已落地；记录落盘与入口层接线待后续阶段 |
 | `umaai-cli` | print 前端（`Frontend` 实现）+ 入口层功能；终端呈现唯一出口 | 骨架（`main` 仅占位输出） |
 | `umaai-tools` | 探针 / 基准 / 策略×世界接口；dev 重依赖唯一出口 | 骨架 |

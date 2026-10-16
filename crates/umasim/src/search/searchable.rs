@@ -13,7 +13,7 @@ use anyhow::Result;
 use rand::rngs::StdRng;
 
 use crate::game::base::basic::BasicGame;
-use crate::game::{Game, Trainer, TurnStage};
+use crate::game::{Game, Trainer};
 use crate::trainer::RandomTrainer;
 
 /// 可被 `FlatSearch`（`search::flat_search`）驱动的剧本
@@ -43,9 +43,13 @@ where
 
     /// CRN 种子派生用的阶段键（外挂重播种与成本探针使用）
     ///
-    /// **必须无副作用**：搜索每次都会求值一次。必须显式 `match`，不得依赖枚举判别值
-    /// ——变体顺序调整时显式 match 会编译报错提醒同步，而判别值会静默改变所有历史种子。
-    fn crn_stage_key(&self) -> u64;
+    /// 默认取当前阶段号（[`Game::stage`]，剧本显式赋号故稳定）；需要更细粒度的剧本可
+    /// 覆盖（例如把子状态编进 key）。**号是稳定契约**：改号等于旧种子与基线失效。
+    ///
+    /// **必须无副作用**：搜索每次都会求值一次。
+    fn crn_stage_key(&self) -> u64 {
+        self.stage().get()
+    }
 
     /// 按剧本的**真实对局路径**执行 rollout 的根动作
     ///
@@ -81,17 +85,6 @@ impl FlatSearchGame for BasicGame {
 
     fn default_rollout_trainer() -> Self::RolloutTrainer {
         RandomTrainer
-    }
-
-    fn crn_stage_key(&self) -> u64 {
-        match self.stage {
-            TurnStage::Begin => 0,
-            TurnStage::Distribute => 1,
-            TurnStage::StoryShop => 2,
-            TurnStage::Train => 3,
-            TurnStage::AfterTrain => 4,
-            TurnStage::End => 5,
-        }
     }
 
     /// 基础局无策略流分支，根动作即通用 `apply_action`

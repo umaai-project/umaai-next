@@ -16,10 +16,10 @@ use rand_distr::{Distribution, weighted::WeightedIndex};
 use umaai_core::gamedata::EventData;
 use umaai_core::{AttributeArray, Data, Ill};
 
-use crate::game::base::{BaseAction, BaseGame, BasePerson};
+use crate::game::base::{BaseAction, BaseGame, BasePerson, BasicStage};
 use crate::game::{
-    ActionEnum, FriendOutState, Game, InheritInfo, PersonType, SupportCard, Trainer, TrainingBasicTable,
-    TrainingValueSource, TurnStage, Uma, UmaFlagsExt, extra_training_event, hint_attr_event, hint_skill_event,
+    ActionEnum, FriendOutState, Game, InheritInfo, PersonType, StageId, SupportCard, Trainer, TrainingBasicTable,
+    TrainingValueSource, Uma, UmaFlagsExt, extra_training_event, hint_attr_event, hint_skill_event,
 };
 
 /// 内置训练基础值表（数值复刻温泉剧本表：5 训练 × 5 等级 × [速耐力根智 PT 体力]）
@@ -217,6 +217,8 @@ pub struct BasicGame {
     pub base: BaseGame,
     /// 人头列表
     pub persons: Vec<BasePerson>,
+    /// 回合阶段（基础局私有的阶段机；真实剧本自持各自的阶段机）
+    pub stage: BasicStage,
 }
 
 impl Deref for BasicGame {
@@ -252,7 +254,6 @@ impl BasicGame {
         self.uma.is_race_turn(self.turn)
     }
 
-    /// 建立一局基础游戏（`race_grades` 由配置层注入）
     /// 建立一局基础游戏（`deck_ids` 长度不固定，由调用方保证；`race_grades` 由配置层注入）
     pub fn newgame(uma_id: u32, deck_ids: &[u32], inherit: InheritInfo, race_grades: &[i32]) -> Result<Self> {
         let mut ret = BasicGame {
@@ -264,6 +265,7 @@ impl BasicGame {
                 race_grades,
             )?,
             persons: vec![],
+            stage: BasicStage::Begin,
         };
         ret.init_persons()?;
         Ok(ret)
@@ -301,8 +303,8 @@ impl Game for BasicGame {
         Ok(())
     }
 
-    fn stage(&self) -> TurnStage {
-        self.base.stage
+    fn stage(&self) -> StageId {
+        self.stage.into()
     }
 
     fn next(&mut self) -> bool {
@@ -312,7 +314,7 @@ impl Game for BasicGame {
         } else if self.turn < self.max_turn() {
             // 下一个回合
             self.turn += 1;
-            self.stage = TurnStage::Begin;
+            self.stage = BasicStage::Begin;
             // 检查自选比赛
             return self.check_free_race();
         } else {
@@ -451,7 +453,7 @@ impl Game for BasicGame {
 
     fn run_stage<T: Trainer<Self>>(&mut self, trainer: &T, rng: &mut StdRng) -> Result<()> {
         match self.stage {
-            TurnStage::Begin => {
+            BasicStage::Begin => {
                 let mut events = self.generate_events(rng);
                 // 友人强制事件
                 if self.friend.out_state == FriendOutState::AfterUnlock {
@@ -477,7 +479,7 @@ impl Game for BasicGame {
                     self.run_event(event, trainer, rng)?;
                 }
             }
-            TurnStage::Distribute => {
+            BasicStage::Distribute => {
                 if self.is_race_turn() {
                     self.reset_distribution();
                 } else {
@@ -485,12 +487,12 @@ impl Game for BasicGame {
                     self.distribute_hint(rng)?;
                 }
             }
-            TurnStage::Train => {
+            BasicStage::Train => {
                 let actions = self.list_actions()?;
                 let selection = trainer.select_action(self, &actions, rng)?;
                 self.apply_action(&actions[selection], rng)?;
             }
-            TurnStage::AfterTrain => {
+            BasicStage::AfterTrain => {
                 let after_events = std::mem::take(&mut self.unresolved_events);
                 for event in &after_events {
                     self.run_event(event, trainer, rng)?;

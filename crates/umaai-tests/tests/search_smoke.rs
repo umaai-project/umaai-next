@@ -13,7 +13,8 @@ use umaai_core::gamedata::EventChoice;
 use umaai_core::testing::data_root;
 use umaai_tests::Checker;
 use umasim::game::base::basic::{BasicAction, BasicGame};
-use umasim::game::{Game, InheritInfo, Trainer, TurnStage};
+use umasim::game::base::stage::BasicStage;
+use umasim::game::{Game, InheritInfo, Trainer};
 use umasim::search::{FlatSearch, NoTerminal, SearchConfig, SearchProbe};
 
 /// 比赛等级表夹具（与单元测试夹具同参数）
@@ -67,7 +68,7 @@ fn decision_root() -> Result<(BasicGame, Vec<BasicAction>)> {
     let mut rng = StdRng::seed_from_u64(0);
     let trainer = NoChoiceTrainer;
     for _ in 0..16 {
-        if game.stage == TurnStage::Train {
+        if game.stage == BasicStage::Train {
             let actions = game.list_actions()?;
             return Ok((game, actions));
         }

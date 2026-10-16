@@ -1,11 +1,13 @@
 //! 基础游戏状态（`BaseGame`）：剧本通用的一局状态底座
 //!
-//! 不含人头信息（`Person` 类型因剧本而异），具体剧本对象需补上
+//! 不含人头信息（`Person` 类型因剧本而异），也不含回合阶段机（阶段归各自实现：
+//! 基础局见 [`basic::BasicGame`]，剧本见剧本仓）；具体剧本对象需补上
 //! `Vec<Person>` 与自己的字段才能实现 [`crate::game::Game`]。
 
 pub mod action;
 pub mod basic;
 pub mod person;
+pub mod stage;
 
 use std::sync::Arc;
 
@@ -18,8 +20,9 @@ use umaai_core::{Array5, AttributeArray, Data, split_status};
 
 pub use action::*;
 pub use person::*;
+pub use stage::BasicStage;
 
-use crate::game::{FriendOutState, FriendState, InheritInfo, SupportCard, TurnStage, Uma};
+use crate::game::{FriendOutState, FriendState, InheritInfo, SupportCard, Uma};
 
 /// 一局游戏的基本状态，剧本通用，用于计算，不用于通信（例如通信只传递卡组id）
 ///
@@ -28,8 +31,6 @@ use crate::game::{FriendOutState, FriendState, InheritInfo, SupportCard, TurnSta
 pub struct BaseGame {
     /// 回合数 [0, 77]
     pub turn: i32,
-    /// 回合阶段
-    pub stage: TurnStage,
     /// 马娘信息
     pub uma: Uma,
     /// 卡组信息
@@ -139,7 +140,6 @@ impl BaseGame {
         uma.five_status_limit.add_eq(&newgame_limit_inherit);
         Ok(Self {
             turn: 0,
-            stage: TurnStage::Begin,
             uma,
             deck,
             inherit,
@@ -389,7 +389,6 @@ mod tests {
     fn test_newgame() -> Result<()> {
         let game = newgame()?;
         assert_eq!(game.turn, 0);
-        assert_eq!(game.stage, TurnStage::Begin);
         assert_eq!(game.deck.len(), 6);
         assert_eq!(game.race_grades.len(), 72);
         // 初始五维 = 面板初始 + 卡组初始加成 + 继承（蓝因子 ×7），独立重算对照

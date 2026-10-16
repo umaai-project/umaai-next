@@ -10,7 +10,8 @@ use umaai_core::gamedata::EventChoice;
 use umaai_core::testing::data_root;
 
 use crate::game::base::basic::{BasicAction, BasicGame};
-use crate::game::{Game, InheritInfo, Trainer, TurnStage};
+use crate::game::base::stage::BasicStage;
+use crate::game::{Game, InheritInfo, Trainer};
 
 /// 比赛等级表夹具（与旧仓默认 72 项一致）
 pub const RACE_GRADES: [i32; 72] = [
@@ -60,7 +61,7 @@ pub fn decision_root() -> Result<(BasicGame, Vec<BasicAction>)> {
     let mut rng = StdRng::seed_from_u64(0);
     let trainer = NoChoiceTrainer;
     for _ in 0..16 {
-        if game.stage == TurnStage::Train {
+        if game.stage == BasicStage::Train {
             let actions = game.list_actions()?;
             return Ok((game, actions));
         }

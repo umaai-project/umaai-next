@@ -4,15 +4,15 @@
 //! 忽略（插件新增字段不得让整帧失败）；必填 / 可选的分界照抄既有 serde 契约——插件
 //! 字段漂移要在解析处炸出声，不能静默按 0 参与决策。
 //!
-//! 转换出的 [`BaseGame`] 只覆盖通用字段：**人头构造与回合阶段归剧本侧**。阶段在本层
-//! 置 `Train` 占位，真实阶段由剧本按帧内 `playing_state` / `source` 判定后覆盖。
+//! 转换出的 [`BaseGame`] 只覆盖通用字段：**人头构造与回合阶段归剧本侧**。阶段是剧本
+//! 自定的位置标识（`Game::stage`），由剧本按帧内 `playing_state` / `source` 判定。
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use umaai_core::flags::UmaFlags;
 use umaai_core::{Array5, Array6, Data, Ill};
 use umasim::game::base::BaseGame;
-use umasim::game::{FriendCardState, FriendOutState, FriendState, InheritInfo, TurnStage, Uma};
+use umasim::game::{FriendCardState, FriendOutState, FriendState, InheritInfo, Uma};
 
 use crate::protocol::story::StoryStatus;
 
@@ -82,7 +82,7 @@ pub fn decode_event_id(id: i32) -> EventRef {
 /// 帧 `baseGame` 段 → 局面的结果
 #[derive(Debug, Clone)]
 pub struct FrameOutcome {
-    /// 重建出的局面底座（通用字段；阶段置 `Train` 占位，由剧本覆盖）
+    /// 重建出的局面底座（通用字段；阶段归剧本侧，由剧本自行判定）
     pub game: BaseGame,
     /// 非致命问题（如事件数值不完整导致的事件跳过）；引擎不打印，由调用方决定告警 / 记录
     pub notes: Vec<FrameNote>,
@@ -318,7 +318,7 @@ impl BaseStatus {
     /// 帧 `baseGame` 段 → 局面底座（通用字段）
     ///
     /// 卡面羁绊以帧的人头为准（人头下标与卡组下标平行，帧缺人头时保留卡面默认）；
-    /// 阶段置 `Train` 占位，由剧本覆盖。
+    /// 阶段归剧本侧（本层不设占位值）。
     ///
     /// 事件帧的选项按成功 / 失败两支挂进待处理队列（人头归属由剧本侧补齐）；
     /// **恢复失败的事件只跳过它自己**（记入 [`FrameOutcome::notes`]），帧其余部分照常生效
@@ -338,7 +338,6 @@ impl BaseStatus {
             }
         }
         game.turn = self.turn;
-        game.stage = TurnStage::Train;
         game.friend = self.to_friend(params.friend_chara_id)?;
         game.train_level_count = self.train_level_count;
         game.distribution = self.person_distribution.clone();

@@ -15,7 +15,7 @@ use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, EventChoice, EventData, TriggerType};
 
 use super::PersonType;
-use crate::game::{CardTrainingEffect, SupportCard, TurnStage, Uma};
+use crate::game::{CardTrainingEffect, StageId, SupportCard, Uma};
 
 /// 训练基础值表：`[训练 0-4][等级 0-4] -> [速耐力根智 PT 体力消耗]`
 pub type TrainingBasicTable = Vec<Vec<[i32; 7]>>;
@@ -94,10 +94,11 @@ pub trait Game: Clone + TrainingValueSource {
     fn turn(&self) -> i32;
     /// 最大回合数 getter
     fn max_turn(&self) -> i32;
-    /// 当前回合阶段
+    /// 当前阶段位置（剧本自定的数字标识）
     ///
-    /// 引擎按阶段下发事件、判定决策点；阶段枚举由 `next` 驱动，实现方直接返回自身状态。
-    fn stage(&self) -> TurnStage;
+    /// 阶段**只表示位置**，不承载中间状态（吃哪碗面、选了哪个地区在局面字段里）；
+    /// 剧本内部用强类型枚举，对外投影成本类型。引擎只把它透传给前端，不做分支。
+    fn stage(&self) -> StageId;
     /// 下一阶段。如果已经结束，返回false
     fn next(&mut self) -> bool;
     /// 模拟当前Stage

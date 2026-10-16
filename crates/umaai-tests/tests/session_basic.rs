@@ -23,8 +23,9 @@ use umaai_core::Data;
 use umaai_core::testing::data_root;
 use umaai_tests::Checker;
 use umaai_tests::testing::{RaceFirstTrainer, basic_newgame};
+use umasim::game::Game;
 use umasim::game::base::basic::BasicGame;
-use umasim::game::{Game, TurnStage};
+use umasim::game::base::stage::BasicStage;
 
 /// 合成帧用的局号（真机由插件给出；终局帧必须与它一致才会被采纳）
 const EPOCH: u64 = 6264;
@@ -103,7 +104,7 @@ fn decision_point() -> Result<BasicGame> {
     let mut game = basic_newgame()?;
     let mut rng = StdRng::seed_from_u64(0);
     for _ in 0..16 {
-        if game.stage == TurnStage::Train {
+        if game.stage == BasicStage::Train {
             return Ok(game);
         }
         game.run_stage(&RaceFirstTrainer, &mut rng)?;
@@ -223,9 +224,16 @@ fn train_record() -> DecisionRecord {
     }
 }
 
-/// 帧 → 局面的构造（剧本侧职责：persons 构造与阶段覆写；基础局用 `init_persons`）
+/// 帧 → 局面的构造（剧本侧职责：persons 构造与阶段判定；基础局用 `init_persons`）
+///
+/// 合成的帧都是决策点帧（command 走训练决策、event 走事件决策），故阶段直接落 `Train`；
+/// 真实剧本在这里按帧内 `playing_state` / `source` 判定自己的阶段。
 fn build_basic(base: umasim::game::base::BaseGame) -> Result<BasicGame> {
-    let mut game = BasicGame { base, persons: vec![] };
+    let mut game = BasicGame {
+        base,
+        persons: vec![],
+        stage: BasicStage::Train,
+    };
     game.init_persons()?;
     Ok(game)
 }

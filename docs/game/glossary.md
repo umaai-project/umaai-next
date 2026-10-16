@@ -108,7 +108,8 @@
 | `PersonType` | 人头类型枚举     | Card / ScenarioCard / Npc … |
 | `ActionEnum` | 动作 trait   | `apply(game, rng)` 修改状态     |
 | `BaseAction` | 基础动作枚举     | Train / Race / Sleep …      |
-| `TurnStage`  | 回合阶段枚举     | Begin / Distribute / … / End |
+| `StageId`    | 阶段位置标识      | 剧本自定的数字（引擎只透传）             |
+| `BasicStage` | 基础局阶段机      | Begin / Distribute / … / End        |
 | `GameView`   | 展示模型       | 面向下游消费者的结构化字段               |
 
 ### 属性字段

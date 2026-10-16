@@ -7,7 +7,7 @@
 //! 阶段内提前返回也会闭合，不靠各分支手写。
 
 use serde::{Deserialize, Serialize};
-use umasim::game::TurnStage;
+use umasim::game::StageId;
 
 use crate::decision::DecisionRecord;
 use crate::runner::Summary;
@@ -41,8 +41,8 @@ pub struct StageCtx {
     pub turn: i32,
     /// 最大回合数
     pub max_turn: i32,
-    /// 回合内阶段
-    pub stage: TurnStage,
+    /// 阶段位置（剧本自定的标识；引擎不解释语义）
+    pub stage: StageId,
 }
 
 /// 错误类别（供前端分类渲染；引擎只给类别与细节，不给文案）
