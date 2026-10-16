@@ -15,13 +15,16 @@ pub mod luck;
 pub mod protocol;
 pub mod record;
 pub mod runner;
+pub mod session;
 
 pub use config::Config;
 pub use decision::{Candidate, DecisionRecord, DecisionSource, LuckAttach};
 pub use frontend::{ErrorEvent, ErrorKind, Frontend, GameStart, RunStart, StageCtx};
 pub use luck::{LuckScoreSnapshot, LuckScoreTracker, raw_from_display, to_display};
 pub use protocol::{
-    BaseParams, BasePersonStatus, BaseStatus, FinalScoreFrame, FrameNote, FrameOutcome, StoryStatus, parse_base_status,
+    BaseParams, BasePersonStatus, BaseStatus, ChannelNote, FileChannel, FinalScoreFrame, FrameKind, FrameNote,
+    FrameOutcome, RawFrame, StoryStatus, parse_base_status, plugin_dir,
 };
 pub use record::LuckScorer;
 pub use runner::{Runner, Summary};
+pub use session::{FinalFrameOutcome, FrameRoute, RunStop, Session, SessionSummary, StepOutcome};

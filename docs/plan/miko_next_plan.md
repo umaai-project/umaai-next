@@ -185,7 +185,7 @@ miko_next/
 | **P1′** | `umaai-core`：RNG 三流（逐字移植）+ 统一错误 + gamedata 纯 schema/DTO + 数据加载（`Data` / 路径注入 / 校验）+ 零依赖纯函数工具（通用统计原语、CRN 种子表） | ✅ 已完成（配置层 `default_config.toml` / `GameConfig` 归 P4′；CRN 只落 `seed_at`） |
 | **P2′** | `umasim` 基座：带行为的领域类型（uma / support_card / inherit / base，去剧本）+ 契约 trait（`Game` / `Trainer` / `TrainingValueSource`） | ✅ 已完成（剧本钩子 `ScenarioRules` / `ScenarioLifecycle` 经拍板延后到有具体剧本时，见 open_items #10；`simulator` 为旧仓空壳未移植） |
 | **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | ✅ 已完成（搜索评分为单轴口径，PT 偏好折算率归 `SearchConfig`；批量后端 / leaf 截断估值 / NN 样本导出延后，见 open_items #12–#14；`BasicGame` 接参考实现 + 随机训练员） |
-| **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | 🚧 P4a 配置层、P4b 前端契约与离线运行器、P4c 运气分与记录装配、P4d-2 协议通用段与终局帧已落地；P4d-1 通道、P4d-3 会话与全链路待做 |
+| **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | ✅ 已完成（P4a 配置层、P4b 前端契约与离线运行器、P4c 运气分与记录装配、P4d 协议通用段 / 终局帧 / 帧通道 / 帧驱动会话；记录落盘与入口层接线归后续阶段） |
 | **P5′** | `umaai-cli`：呈现全入 cli；`BasicGame` 跑满回合冒烟 | — |
 | **P6′** | `umaai-tools`：探针 / bench / baseline runner + `--update` | — |
 | **P7′** | 空剧本模板 + 文档（机制 / 契约 / 术语）+ 验收 | — |
