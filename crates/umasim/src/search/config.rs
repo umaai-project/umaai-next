@@ -3,11 +3,17 @@
 //! 扁平蒙特卡洛搜索的参数。默认值沿用既有调参基线，入口层（`umaai`）按配置覆盖；
 //! 搜索内核只读取本结构，不读任何全局状态。
 
+use serde::{Deserialize, Serialize};
+
 /// 搜索配置
 ///
 /// 字段分三类：预算（`search_n` / `max_depth` / `group_size`）、评分口径
 /// （`radical_factor_max` / `pt_favor_rate`）、机制开关（UCB / 外挂 CRN / 有序原始分）。
-#[derive(Debug, Clone)]
+///
+/// 作为配置 DTO 时**不给字段默认值**：配置文件的缺字段必须报错，避免「代码缺省 /
+/// 文件缺省」两份真相；[`Default`] 只服务不读配置文件的调用方（测试 / 探针）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SearchConfig {
     /// 每个动作的搜索次数（搜索越多越准，越慢）
     pub search_n: usize,

@@ -256,10 +256,10 @@ impl SupportCard {
                             card_type_count[c.card_type as usize] += 1;
                         }
                     }
-                    for i in 0..5 {
-                        if card_type_count[i] > 0 {
+                    for (i, count) in card_type_count.iter().take(5).enumerate() {
+                        if *count > 0 {
                             // 0-4对应副属性词条#3-7
-                            ret.add_effect_line((i + 3) as i32, card_type_count[i].max(2));
+                            ret.add_effect_line((i + 3) as i32, (*count).max(2));
                         }
                     }
                     if card_type_count[5] > 0 {
@@ -323,10 +323,12 @@ mod tests {
     /// 副属性叠加（add_eq）与乘区叠加公式
     #[test]
     fn test_effect_add() {
-        let mut a = CardTrainingEffect::default();
-        a.youqing = 20.0;
-        a.ganjing = 10;
-        a.bonus = [1, 2, 3, 4, 5, 6];
+        let a = CardTrainingEffect {
+            youqing: 20.0,
+            ganjing: 10,
+            bonus: [1, 2, 3, 4, 5, 6],
+            ..Default::default()
+        };
         let b = CardTrainingEffect {
             youqing: 30.0,
             ganjing: 5,

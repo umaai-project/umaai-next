@@ -226,9 +226,11 @@ impl Uma {
     pub fn score_parts(&self) -> Result<ScoreParts> {
         let cons = &Data::get()?.consts;
         let mut five_status = [0i32; 5];
-        for i in 0..5 {
-            let status = self.five_status[i].min(self.five_status_limit[i]);
-            five_status[i] = cons.status_final_score(status);
+        for (slot, (status, limit)) in five_status
+            .iter_mut()
+            .zip(self.five_status.iter().zip(self.five_status_limit.iter()))
+        {
+            *slot = cons.status_final_score((*status).min(*limit));
         }
         Ok(ScoreParts {
             skill: self.skill_score,
@@ -251,7 +253,7 @@ impl Uma {
             self.flags.positive_thinking_count -= 1;
             return self;
         }
-        self.motivation = (self.motivation + delta).max(1).min(5);
+        self.motivation = (self.motivation + delta).clamp(1, 5);
         self
     }
 
@@ -390,8 +392,10 @@ mod tests {
     #[test]
     fn test_motivation_shield() {
         // 一层盾挡下一次掉心情
-        let mut uma = Uma::default();
-        uma.motivation = 4;
+        let mut uma = Uma {
+            motivation: 4,
+            ..Default::default()
+        };
         uma.flags.positive_thinking_count = 1;
         uma.add_motivation(-1);
         assert_eq!(
@@ -401,8 +405,10 @@ mod tests {
         );
 
         // 大失败 -3 也只消耗一层盾
-        let mut uma = Uma::default();
-        uma.motivation = 4;
+        let mut uma = Uma {
+            motivation: 4,
+            ..Default::default()
+        };
         uma.flags.positive_thinking_count = 2;
         uma.add_motivation(-3);
         assert_eq!(
@@ -412,8 +418,10 @@ mod tests {
         );
 
         // 盾为 0：真掉心情，下限 1
-        let mut uma = Uma::default();
-        uma.motivation = 4;
+        let mut uma = Uma {
+            motivation: 4,
+            ..Default::default()
+        };
         uma.add_motivation(-1);
         assert_eq!(uma.motivation, 3, "无盾时应真掉心情");
         uma.motivation = 1;
@@ -421,8 +429,10 @@ mod tests {
         assert_eq!(uma.motivation, 1, "心情下限仍为 1");
 
         // 涨心情不消耗盾，上限 5
-        let mut uma = Uma::default();
-        uma.motivation = 3;
+        let mut uma = Uma {
+            motivation: 3,
+            ..Default::default()
+        };
         uma.flags.positive_thinking_count = 2;
         uma.add_motivation(2);
         assert_eq!(
@@ -509,12 +519,15 @@ mod tests {
     fn expected_score_parts(uma: &Uma) -> ScoreParts {
         let cons = &Data::get().expect("数据未初始化").consts;
         let mut five_status = [0i32; 5];
-        for i in 0..5 {
+        for (slot, (value, limit)) in five_status
+            .iter_mut()
+            .zip(uma.five_status.iter().zip(uma.five_status_limit.iter()))
+        {
             // 刻意不调 `cons.status_final_score()`：这份是用来对照 `score_parts()` 的
             // 独立实现，两边共用同一个查表函数就不再是 oracle 了。
             let table = &cons.five_status_final_score;
-            let status = uma.five_status[i].min(uma.five_status_limit[i]).max(0) as usize;
-            five_status[i] = table[status.min(table.len() - 1)];
+            let status = (*value).min(*limit).max(0) as usize;
+            *slot = table[status.min(table.len() - 1)];
         }
         // 切者/小切的 PT 折算加成：独立写死系数，保证能抓住实现里的系数写错
         let pt_factor = if uma.flags.qiezhe {
@@ -554,34 +567,42 @@ mod tests {
         check_score_parts_case("全零", &Uma::default());
 
         // 2. 五维触顶被 limit 截断
-        let mut uma = Uma::default();
-        uma.five_status = [5000, 4000, 3000, 2000, 1000];
-        uma.five_status_limit = [100, 80, 60, 40, 20];
-        uma.skill_score = 510;
+        let uma = Uma {
+            five_status: [5000, 4000, 3000, 2000, 1000],
+            five_status_limit: [100, 80, 60, 40, 20],
+            skill_score: 510,
+            ..Default::default()
+        };
         check_score_parts_case("五维触顶", &uma);
 
         // 3. 五维为负（按 0 查表）
-        let mut uma = Uma::default();
-        uma.five_status = [-10, -1, 0, 50, 100];
-        uma.five_status_limit = [1200, 1200, 1200, 1200, 1200];
+        let uma = Uma {
+            five_status: [-10, -1, 0, 50, 100],
+            five_status_limit: [1200, 1200, 1200, 1200, 1200],
+            ..Default::default()
+        };
         check_score_parts_case("五维为负", &uma);
 
         // 4. skill_pt 与 total_hints 非零（total_pt 发生 floor）
-        let mut uma = Uma::default();
-        uma.skill_pt = 1;
-        uma.total_hints = 1;
-        uma.skill_score = 100;
-        uma.five_status = [200, 180, 160, 140, 120];
-        uma.five_status_limit = [1200, 1200, 1200, 1200, 1200];
+        let uma = Uma {
+            skill_pt: 1,
+            total_hints: 1,
+            skill_score: 100,
+            five_status: [200, 180, 160, 140, 120],
+            five_status_limit: [1200, 1200, 1200, 1200, 1200],
+            ..Default::default()
+        };
         println!("floor 边界: total_pt()={}", uma.total_pt().expect("total_pt"));
         check_score_parts_case("floor 边界", &uma);
 
         // 5. 切者 / 小切：PT 项按 1.1 / 1.04 放大（只乘 PT 项）
         for (label, qiezhe, factor) in [("切者", true, 1.1_f32), ("小切", false, 1.04_f32)] {
-            let mut uma = Uma::default();
-            uma.skill_pt = 1000;
-            uma.five_status = [200, 180, 160, 140, 120];
-            uma.five_status_limit = [1200, 1200, 1200, 1200, 1200];
+            let mut uma = Uma {
+                skill_pt: 1000,
+                five_status: [200, 180, 160, 140, 120],
+                five_status_limit: [1200, 1200, 1200, 1200, 1200],
+                ..Default::default()
+            };
             let base_pt = uma.score_parts().expect("score_parts").pt;
             uma.flags.qiezhe = qiezhe;
             uma.flags.xiaoqie = !qiezhe;

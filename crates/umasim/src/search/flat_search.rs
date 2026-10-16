@@ -56,10 +56,10 @@ impl<D: Default> CandidateAccum<D> {
 impl<D> CandidateAccum<D> {
     /// 确保有序槽位覆盖到 `idx`（失败序号保持 `None`）
     fn ensure_ordered_slot(&mut self, idx: usize) {
-        if let Some(ordered) = self.ordered.as_mut() {
-            if ordered.len() <= idx {
-                ordered.resize(idx + 1, None);
-            }
+        if let Some(ordered) = self.ordered.as_mut()
+            && ordered.len() <= idx
+        {
+            ordered.resize(idx + 1, None);
         }
     }
 
@@ -94,7 +94,7 @@ struct ProbeCounts {
 
 /// 一次搜索内核调用的成本记录（仅测量用）
 ///
-/// 内核不暴露 [`CandidateAccum`]，「每候选计划 / 成功 / 失败次数」正是预算核实要看的
+/// 内核不暴露候选累加器（`CandidateAccum`），「每候选计划 / 成功 / 失败次数」正是预算核实要看的
 /// 量。本结构把这些观测量原样带出，**不参与**任何判据。
 #[derive(Debug, Clone)]
 pub struct SearchProbe {
@@ -575,6 +575,8 @@ where
     ///
     /// 第 k 次取 `seeds.seed_at(offset + k)` 播种。并行收集必须保序、逐项累加：
     /// 顺序变化会改变浮点求和顺序，让所有历史基准失效。
+    // 参数多但每个都是独立引用，聚成结构体只会在热路径上多一层间接；保持签名直观
+    #[allow(clippy::too_many_arguments)]
     fn simulate_many<F, T>(
         &self,
         game: &G,
@@ -843,7 +845,7 @@ mod tests {
                 .with_strict_rollout(strict);
             let out = fs.search_with(&game, &actions, &mut rng, |_g, a, s| {
                 let calls = fails.fetch_add(1, Ordering::Relaxed);
-                if calls % 3 == 0 {
+                if calls.is_multiple_of(3) {
                     bail!("桩 rollout 失败");
                 }
                 Ok(stub_score(a, s))

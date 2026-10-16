@@ -1,6 +1,6 @@
 //! 可裁剪的诊断日志宏与进程级开关
 //!
-//! 与游戏、与算法无关，供各层共用：规则层与搜索层的诊断输出走 [`diag!`]，业务日志
+//! 与游戏、与算法无关，供各层共用：规则层与搜索层的诊断输出走 [`diag!`](crate::diag)，业务日志
 //! 仍直接走 `log::{info, warn, error}`。
 //!
 //! # 两层开关
@@ -20,7 +20,7 @@ static DIAG_ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// 诊断输出是否在**编译期**被启用（本 crate 的 feature `diag`）
 ///
-/// 常量求值：关闭该 feature 的构建里取值恒为 `false`，编译器整块消除 [`diag!`] 展开体，
+/// 常量求值：关闭该 feature 的构建里取值恒为 `false`，编译器整块消除 [`diag!`](crate::diag) 展开体，
 /// 因此关闭态是真正的零运行时开销。
 #[inline]
 #[must_use]
@@ -45,7 +45,7 @@ pub fn set_enabled(on: bool) {
 
 /// 诊断输出抑制 guard（RAII）
 ///
-/// 创建时关闭诊断输出，[`Drop`](std::ops::Drop) 时恢复**进入前的值**（栈式嵌套安全：
+/// 创建时关闭诊断输出，[`Drop`] 时恢复**进入前的值**（栈式嵌套安全：
 /// 内层 guard 提前 drop 不会误开外层的抑制状态）。开关是进程级的，因此多局并行时
 /// 任一局的抑制会顺带静默其他局的诊断输出。
 #[derive(Debug)]

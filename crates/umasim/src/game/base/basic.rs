@@ -301,6 +301,10 @@ impl Game for BasicGame {
         Ok(())
     }
 
+    fn stage(&self) -> TurnStage {
+        self.base.stage
+    }
+
     fn next(&mut self) -> bool {
         if let Some(stage) = self.stage.next() {
             // 回合内，下一个阶段
@@ -586,7 +590,7 @@ impl Game for BasicGame {
         if self.is_xiahesu() {
             5
         } else {
-            (self.train_level_count[train] as usize / 4 + 1).min(5).max(1)
+            (self.train_level_count[train] as usize / 4 + 1).clamp(1, 5)
         }
     }
 }

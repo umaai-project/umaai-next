@@ -7,3 +7,13 @@
 //!
 //! 设计见 `docs/plan/miko_next_plan.md`。
 #![warn(missing_docs)]
+
+pub mod config;
+pub mod decision;
+pub mod frontend;
+pub mod runner;
+
+pub use config::Config;
+pub use decision::{Candidate, DecisionRecord, DecisionSource};
+pub use frontend::{ErrorEvent, ErrorKind, Frontend, GameStart, RunStart, StageCtx};
+pub use runner::{Runner, Summary};

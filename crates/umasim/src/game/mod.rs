@@ -22,7 +22,7 @@ pub use traits::*;
 pub use uma::*;
 
 /// 回合阶段
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Sequence)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Sequence)]
 pub enum TurnStage {
     /// 1. 回合开始
     #[default]
@@ -158,8 +158,10 @@ impl FriendState {
     /// `idrank` 为 `None` 表示没带友人卡。`rank > 4` 视为非法输入。
     pub fn new(idrank: Option<u32>, index: usize) -> Result<Self> {
         let data = Data::get()?;
-        let mut ret = FriendState::default();
-        ret.out_used = vec![false, false, false, false, false];
+        let mut ret = FriendState {
+            out_used: vec![false; 5],
+            ..Default::default()
+        };
         if let Some(i) = idrank {
             let (id, rank) = (i / 10, i % 10);
             if rank > 4 {

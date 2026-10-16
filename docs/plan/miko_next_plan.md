@@ -2,7 +2,7 @@
 
 > 本文取代 v1 方案（`umaai-rs/.trae/documents/miko_next_rebuild_plan.md`）。v1 作为机制清单与附录参考随仓保留于
 > [`docs/plan/v1_plan_reference.md`](v1_plan_reference.md)。
-> 本文记录 2026-10-14 定稿决策与 2026-10-15 的层界修订；未决项集中在 [`docs/notes/open_items.md`](../notes/open_items.md)。
+> 本文记录 2026-10-14 定稿决策、2026-10-15 的层界修订、2026-10-16 的独立仓改判与 2026-10-17 的 P4′ 执行定稿（见 §9）；未决项集中在 [`docs/notes/open_items.md`](../notes/open_items.md)。
 
 ---
 
@@ -12,7 +12,7 @@
 |---|---|
 | 1 | 另起**空仓** `miko_next`，从零初始化；**不在旧仓原地重构** |
 | 2 | 旧仓 `umaai-rs`（含其 `miko_next` 分支）**暂不动**；`umaai-rs-ref`（master 只读工作树）作移植源与行为基准 |
-| 3 | 新仓**独立全新 git 历史**；完工后整体并入 `umaai-rs` 的 `miko_next` 分支 |
+| 3 | 独立仓 **`umaai-next`**（本地目录暂用 `miko_next/`），**独立全新 git 历史**；**2026-10-16 改判**：不再预设并入 `umaai-rs`，收口方式推迟到 P7′ 验收后按「新引擎是否已能替代旧实现」再定 |
 | 4 | 移植方式：**混合** —— 通用件**复制**、关键件**重写** |
 | 5 | 核心层命名 **`umaai-core`**；零重依赖件入核心层（RNG 三流 / 统一错误 / 纯函数工具） |
 | 6 | 文档目录 **`docs/`**（工具无关）；**skills 暂不移植**，不建 `.trae/`；`AGENTS.md` 留仓库根 |
@@ -42,6 +42,8 @@
 ---
 
 ## 2. 仓库与目录
+
+仓名 **`umaai-next`**（与 `umaai-rs` 并列的独立仓，见 §0 决策 3）；本地目录暂用 `miko_next/`，下树按本地目录名列出。
 
 ```
 miko_next/
@@ -124,6 +126,7 @@ miko_next/
   - **不保留旧 `global!` 宏**，统一显式调用
   - **载入不写日志**（`log` 不入 core）：载入统计返回给调用方，由上层打印
 - **路径由宿主注入**（方案 A 起步）；内部经极薄访问器取字节，**预留 `DataSource` 形状**（方案 B：目录 / 内嵌 / 内存多源可叠加）
+- **配置载入**：默认层 `gamedata/default_config.toml`（唯一真源、字段齐全）+ 宿主注入的可选覆盖层（同构、字段全可选、段缺失整段沿用）；剧本专属配置段不进本仓；比赛等级表等具名预设按名取、缺失即报错
 - **不做热更新**：更新 = 换磁盘文件 + 重启生效；`manifest.schema_version` 做数据/程序一致性校验
 - **测试防重入**：test-only 持锁安装（`TEST_LOCK` 串行 + `Drop` 清理）；需要不同数据的测试走值类型（绕过全局）
 
@@ -182,10 +185,20 @@ miko_next/
 | **P1′** | `umaai-core`：RNG 三流（逐字移植）+ 统一错误 + gamedata 纯 schema/DTO + 数据加载（`Data` / 路径注入 / 校验）+ 零依赖纯函数工具（通用统计原语、CRN 种子表） | ✅ 已完成（配置层 `default_config.toml` / `GameConfig` 归 P4′；CRN 只落 `seed_at`） |
 | **P2′** | `umasim` 基座：带行为的领域类型（uma / support_card / inherit / base，去剧本）+ 契约 trait（`Game` / `Trainer` / `TrainingValueSource`） | ✅ 已完成（剧本钩子 `ScenarioRules` / `ScenarioLifecycle` 经拍板延后到有具体剧本时，见 open_items #10；`simulator` 为旧仓空壳未移植） |
 | **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | ✅ 已完成（搜索评分为单轴口径，PT 偏好折算率归 `SearchConfig`；批量后端 / leaf 截断估值 / NN 样本导出延后，见 open_items #12–#14；`BasicGame` 接参考实现 + 随机训练员） |
-| **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | — |
+| **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | 🚧 P4a 配置层、P4b 前端契约与离线运行器已落地；P4c（record / luck）、P4d（协议与通道）待做 |
 | **P5′** | `umaai-cli`：呈现全入 cli；`BasicGame` 跑满回合冒烟 | — |
 | **P6′** | `umaai-tools`：探针 / bench / baseline runner + `--update` | — |
 | **P7′** | 空剧本模板 + 文档（机制 / 契约 / 术语）+ 验收 | — |
+
+### P4′ 执行定稿（2026-10-17 拍板）
+
+| 项 | 定稿 |
+|---|---|
+| 配置形态 | 默认值只存在于数据根 `default_config.toml`（唯一真源，Rust 侧不留同名字段缺省）；覆盖层与默认层同构、字段全可选，段缺失整段沿用；未知键严格报错。比赛等级表用具名预设按名选择（`presets.<kind>.<name>` + 字段填名字），剧本专属配置段不进本仓 |
+| 决策上下文捕获 | DTO 归引擎（`umaai::decision`），训练员经可选接缝 `DecisionSource` 提供；不提供则只记动作，基础局照跑。不在计算层加同类 DTO |
+| 协议深度 | 完整档：`GameStatus` / `ScenarioProfile` 接缝 + 帧通道 + 通用 `baseGame` 解析 + 终局帧 + 基础局参考实现（放测试支撑）；**具体剧本段解析永远留剧本仓** |
+| 通道 | 各剧本统一走 `.portable` 下的回合帧 / 终局帧，路径与文件名作代码常量、保留根目录注入点，不做平台探测；实时监听用文件通知库，**测试必须带显式超时**（见 open_items #16） |
+| 记录落盘 | P4 只交付记录数据模型与运气分算法（纯数据、无 IO）；CSV / 归档 / 趋势图等落盘与列契约延后到有真实消费者时（见 open_items #15） |
 
 ---
 

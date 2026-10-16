@@ -1,4 +1,4 @@
-//! 基础动作（`BaseAction`）：对 [`BaseGame`](super::BaseGame) 的通用变换
+//! 基础动作（`BaseAction`）：对 [`BaseGame`] 的通用变换
 
 use std::fmt::Display;
 

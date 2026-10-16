@@ -5,7 +5,6 @@
 
 | # | 事项 | 现状 / 倾向 | 备注 |
 |---|---|---|---|
-| 1 | **收口方式** | 待定 | 新仓并入 `umaai-rs/miko_next`：整体替换该分支内容，还是 `merge --allow-unrelated-histories` |
 | 2 | **baseline 数据文件位置** | 待定 | 候选：`crates/umaai-tests/baselines/` · `crates/umaai-tests/tests/baseline/` · 仓库根 `baselines/` |
 | 3 | **更新器交互细节** | 待定 | 启动自动检查+提示 / 仅 `umaai update` 子命令 / 两者；`ura_data`（小黑板数据）是否纳入 |
 | 4 | **算法探索 workbench 归属** | 倾向独立项目 | 独立仓 / 仓内单列 / 暂不进仓；已留 seam |
@@ -13,12 +12,13 @@
 | 6 | **发布 exe 名** | 暂 `umaai-cli` | 最终 `umaai.exe` 产物名在打包阶段定；注意与 lib crate `umaai` 的同名产物冲突 |
 | 7 | **gamedata 数据版本策略** | 待定 | `manifest.json` 的 `schema_version` 语义、数据来源盖章方式 |
 | 8 | **`umaai-rs-ref` 是否随进度更新** | 待定 | 现为 master 只读工作树，建议冻结不动 |
-| 9 | **比赛等级表预设机制** | 已拍板方向，设计待 P4′（`pt_favor_rate` 部分已落地） | 配置层提供多个预设表按名选择（类似 bench 预设卡组）；`pt_favor_rate` 已落为 `SearchConfig.pt_favor_rate`（代码默认 2.0、配置可覆盖），搜索评分为单轴口径 |
 | 10 | **剧本钩子 trait 形态** | 已拍板延后 | `ScenarioRules` / `ScenarioLifecycle` 待有具体剧本时设计；扩充纪律：带默认实现、非破坏 |
 | 11 | **无剧本基础局不带专用智能算法** | 已拍板 | `BasicGame` 仅为冒烟基线，无终端用户；智能算法（策略 / NN 特征 / 调参）归剧本仓，umasim 只交付框架与骨架（搜索泛型 / `ActionIndex` / evaluator 壳 / rollout 基础设施）。例外：`RandomTrainer` 作为契约参考实现与 CLI 调试件，P5′ 前产品化 |
 | 12 | **搜索批量 rollout 后端** | 已拍板延后 | 跨 rollout 攒批（如整批送 GPU）的教师后端：仓内无实现者、无法验证。等真实需求出现再设计；内核闭包注入入口已留（`search_with_terminal`） |
 | 13 | **leaf 截断估值（`max_depth > 0`）** | 已拍板延后 | 依赖神经层（`Evaluator` / 特征编码）；当前搜索入口对未声明支持的剧本硬拒，不静默降级为终局搜索 |
 | 14 | **搜索层第二评分轴（原始分 / PT 分双轴）** | 已拍板不保留 | 搜索只留含 PT 偏好折算的**单轴**评分；需要原始分时作为终局观测维度输出（用户拍板） |
+| 15 | **在线记录落盘（CSV / meta / 归档 / 趋势图）** | 已拍板延后到有真实消费者时 | 引擎只交付记录数据模型与运气分算法（P4c）；列契约需按真实下游（复盘工具 / 在线运行）冻结，归档与绘图属重依赖，归 `umaai-tools` / `umaai-cli` |
+| 16 | **通道路径常量与实时监听** | 已拍板（P4d 执行） | 各剧本统一走 `.portable` 下的回合帧 / 终局帧，路径与文件名作代码常量、保留根目录注入点，不做 `LOCALAPPDATA` 探测；实时监听用文件通知库，**相关测试必须带显式超时**，超时即失败退出、不得阻塞 |
 
 ## 迁入本仓时已知的文档悬空引用
 

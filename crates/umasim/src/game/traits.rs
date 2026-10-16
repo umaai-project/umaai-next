@@ -15,7 +15,7 @@ use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, EventChoice, EventData, TriggerType};
 
 use super::PersonType;
-use crate::game::{CardTrainingEffect, SupportCard, Uma};
+use crate::game::{CardTrainingEffect, SupportCard, TurnStage, Uma};
 
 /// 训练基础值表：`[训练 0-4][等级 0-4] -> [速耐力根智 PT 体力消耗]`
 pub type TrainingBasicTable = Vec<Vec<[i32; 7]>>;
@@ -94,6 +94,10 @@ pub trait Game: Clone + TrainingValueSource {
     fn turn(&self) -> i32;
     /// 最大回合数 getter
     fn max_turn(&self) -> i32;
+    /// 当前回合阶段
+    ///
+    /// 引擎按阶段下发事件、判定决策点；阶段枚举由 `next` 驱动，实现方直接返回自身状态。
+    fn stage(&self) -> TurnStage;
     /// 下一阶段。如果已经结束，返回false
     fn next(&mut self) -> bool;
     /// 模拟当前Stage
@@ -432,9 +436,9 @@ pub trait Game: Clone + TrainingValueSource {
         let status_bonus = [b[0], b[1], b[2], b[3], b[4], 0];
         let mut ret = ActionValue::default();
         // 副属性
-        for i in 0..6 {
-            if basic_value[i] > 0 {
-                ret.status_pt[i] = basic_value[i] + buffs.bonus[i];
+        for ((slot, basic), bonus) in ret.status_pt.iter_mut().zip(basic_value).zip(&buffs.bonus) {
+            if *basic > 0 {
+                *slot = basic + bonus;
             }
         }
         ret.vital = basic_value[6];
@@ -473,16 +477,15 @@ pub trait Game: Clone + TrainingValueSource {
         } else {
             0.0
         };
-        // 原始失败率最大99%
+        // 原始失败率最大99%（输入均为整数转来的有限值，不存在 NaN 口径差异）
         let mut f = if vital < x0 {
             (100.0 - vital) * (x0 - vital) / 40.0
         } else {
             0.0
         }
-        .min(99.0)
-        .max(0.0);
+        .clamp(0.0, 99.0);
         // 如果有不擅长练习，失败率可能达到100%
-        f = (f * (100.0 - buffs.fail_rate_drop) / 100.0 + bias).min(100.0).max(0.0);
+        f = (f * (100.0 - buffs.fail_rate_drop) / 100.0 + bias).clamp(0.0, 100.0);
         Ok(f)
     }
 }

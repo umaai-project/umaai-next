@@ -103,10 +103,10 @@ impl ActionResult {
         if radical_factor.abs() < 1e-6 {
             return self.mean();
         }
-        if let Some((cached_rf, cached_result)) = self.cached_weighted.get() {
-            if (cached_rf - radical_factor).abs() < 1e-9 {
-                return cached_result;
-            }
+        if let Some((cached_rf, cached_result)) = self.cached_weighted.get()
+            && (cached_rf - radical_factor).abs() < 1e-9
+        {
+            return cached_result;
         }
         let result = self.compute_weighted_mean(radical_factor);
         self.cached_weighted.set(Some((radical_factor, result)));

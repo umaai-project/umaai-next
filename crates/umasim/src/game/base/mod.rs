@@ -158,7 +158,7 @@ impl BaseGame {
 
     /// 基础设施等级（计数 / 4 + 1，夹 1-5）
     pub fn base_train_level(&self, train: usize) -> usize {
-        (self.train_level_count[train] / 4 + 1).max(0).min(5) as usize
+        (self.train_level_count[train] / 4 + 1).clamp(0, 5) as usize
     }
 
     /// 随机选择一个能发生的事件（按 `max_time` 次数限制过滤）
@@ -304,8 +304,7 @@ mod tests {
     /// 层1：自选比赛回合边界
     #[test]
     fn test_can_self_race_bounds() {
-        let mut game = BaseGame::default();
-        game.turn = 12;
+        let mut game = BaseGame { turn: 12, ..Default::default() };
         assert!(!game.can_self_race(), "回合 12 不可自选");
         game.turn = 13;
         assert!(game.can_self_race(), "回合 13 起可自选");
