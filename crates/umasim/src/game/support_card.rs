@@ -231,6 +231,20 @@ impl SupportCard {
                     ret.add_effect_line(param[1], param[2]);
                 }
             }
+            21 => {
+                // 编成卡种数 >= param[1] 时触发词条 param[2] = param[3]
+                // （103 型经导出脚本特判重排，param[2] 恒为 8 = 训练词条）
+                let mut seen = [false; 7];
+                for c in game.deck() {
+                    if (0..7).contains(&c.card_type) {
+                        seen[c.card_type as usize] = true;
+                    }
+                }
+                let kinds = seen.iter().filter(|&&s| s).count() as i32;
+                if kinds >= param[1] {
+                    ret.add_effect_line(param[2], param[3]);
+                }
+            }
             20
                 // 巨匠: 羁绊>80时根据卡组决定加成
                 if self.friendship >= param[2] => {
@@ -265,6 +279,9 @@ mod tests {
     use std::ptr;
 
     use super::*;
+    use crate::game::InheritInfo;
+    use crate::game::base::basic::BasicGame;
+    use crate::testutil::RACE_GRADES;
     use umaai_core::testing::data_root;
 
     /// 不同突破等级共享全局面板，克隆后的动态卡状态独立
@@ -327,5 +344,55 @@ mod tests {
         assert_eq!(e.youqing, 50.0);
         e.add_effect_line(999, 1); // 未知词条静默跳过
         assert_eq!(e.youqing, 50.0);
+    }
+
+    /// 固有类型 21（103）：编成卡种数 >= 4 时训练效果 +10；卡种不足无加成
+    ///
+    /// 302704（[根]第一红宝）param `[103, 4, 8, 10]`。
+    #[test]
+    fn test_unique_effect_21() -> Result<()> {
+        Data::init(data_root()?)?;
+        // 编成 A：速×2 + 智 + 力 + 友 + 根(302704) = 5 种 >= 4
+        let deck_a: [u32; 6] = [302424, 302464, 302484, 302564, 302574, 302704];
+        let game_a = BasicGame::newgame(101901, &deck_a, InheritInfo::default(), &RACE_GRADES)?;
+        let card = &game_a.deck[5];
+        let base = CardTrainingEffect::from(card.card_value());
+        let eff = card.calc_training_effect(&game_a, 3);
+        assert_eq!(eff.xunlian, base.xunlian + 10, "编成 5 种卡时应触发训练 +10");
+        println!("types>=4: xunlian {} -> {}", base.xunlian, eff.xunlian);
+
+        // 编成 B：速×5 + 根(302704) = 2 种 < 4，无加成
+        let deck_b: [u32; 6] = [200130, 200140, 200200, 200230, 200310, 302704];
+        let game_b = BasicGame::newgame(101901, &deck_b, InheritInfo::default(), &RACE_GRADES)?;
+        let card = &game_b.deck[5];
+        let base = CardTrainingEffect::from(card.card_value());
+        let eff = card.calc_training_effect(&game_b, 3);
+        assert_eq!(eff.xunlian, base.xunlian, "编成仅 2 种卡时不应触发");
+        Ok(())
+    }
+
+    /// 固有类型 5（105）：按编成支援卡类型加初始属性
+    ///
+    /// 302970（[力]爱丽数码）param `[105, 10, 2]`；对照卡 100050（[力]，
+    /// 面板初始加成全零、无 5 型固有）。两局差值即纯 5 型加成。
+    #[test]
+    fn test_unique_effect_5() -> Result<()> {
+        Data::init(data_root()?)?;
+        let deck_b: [u32; 6] = [302424, 302464, 302484, 302564, 302574, 302970];
+        let deck_ref: [u32; 6] = [302424, 302464, 302484, 302564, 302574, 100050];
+        let game_b = BasicGame::newgame(101901, &deck_b, InheritInfo::default(), &RACE_GRADES)?;
+        let game_ref = BasicGame::newgame(101901, &deck_ref, InheritInfo::default(), &RACE_GRADES)?;
+        let diff: Vec<i32> = game_b
+            .uma
+            .five_status
+            .iter()
+            .zip(game_ref.uma.five_status)
+            .map(|(a, b)| a - b)
+            .collect();
+        // 编成（含自身）：速×2 → 速+20；智+10；力×2 → 力+20；友 → 全维+2
+        assert_eq!(diff, vec![22, 2, 22, 2, 12], "5 型初始属性加成（速2智1力2友1）");
+        // 初始 PT 不受影响（两张对照卡面板 PT 均为 0）
+        assert_eq!(game_b.uma.skill_pt, game_ref.uma.skill_pt);
+        Ok(())
     }
 }

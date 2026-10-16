@@ -77,13 +77,14 @@ impl BaseGame {
 
     /// 建立游戏对象
     ///
+    /// `deck_ids` 长度不固定（剧本的卡组约定可能不同），由调用方保证合法性；
     /// `limit_base` 由调用的剧本提供（见 [`Uma::new`]）；`race_grades` 为比赛
     /// 等级表（配置层注入）。构造顺序是**先写剧本基值、再加继承**；任何剧本
     /// 都不得在本函数返回后整体赋值 `five_status_limit`，那会擦掉已累加的
     /// 开局继承增量。
     pub fn new(
         uma_id: u32,
-        deck_ids: &[u32; 6],
+        deck_ids: &[u32],
         inherit: InheritInfo,
         limit_base: Array5,
         race_grades: &[i32],
@@ -113,6 +114,23 @@ impl BaseGame {
                 card_type_count[card.card_type as usize] += 1;
             }
             deck.push(card);
+        }
+        // 固有类型 5（105）：按编成支援卡类型加初始属性——
+        // 编成中每张训练系卡（0-4）给对应属性 +param[1]，每张友人/团队卡（5+）全五维 +param[2]。
+        // 逐张生效（编成含多张此类固有卡时叠加），按全编成（含该卡自身）计。
+        for card in &deck {
+            if card.data.unique_effect_type == 5 {
+                let param = &card.data.unique_effect_param;
+                for other in &deck {
+                    if (0..5).contains(&other.card_type) {
+                        uma.five_status[other.card_type as usize] += param[1];
+                    } else {
+                        for i in 0..5 {
+                            uma.five_status[i] += param[2];
+                        }
+                    }
+                }
+            }
         }
         // 继承
         let newgame_inherit = inherit.inherit_newgame();
@@ -254,14 +272,10 @@ impl BaseGame {
 
     /// 比较 self 是否为 last 的同一或者下一回合（在线记录对齐用）
     pub fn is_next_of(&self, last: &BaseGame) -> bool {
-        // 马娘ID相同且回合数相同或差1，则再检查卡组
+        // 马娘ID相同且回合数相同或差1，则再检查卡组（长度与内容均需一致）
         if self.uma.uma_id == last.uma.uma_id && (self.turn == last.turn || self.turn == last.turn + 1) {
-            for i in 0..6 {
-                if self.deck[i].card_id != last.deck[i].card_id {
-                    return false;
-                }
-            }
-            return true;
+            return self.deck.len() == last.deck.len()
+                && self.deck.iter().zip(&last.deck).all(|(a, b)| a.card_id == b.card_id);
         }
         false
     }
@@ -270,13 +284,8 @@ impl BaseGame {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::RACE_GRADES;
     use umaai_core::testing::data_root;
-
-    /// 比赛等级表夹具（与旧仓默认 72 项一致，仅测试用）
-    const RACE_GRADES: [i32; 72] = [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 3, 4, 3, 3, 4, 3, 3, 2, 3, 1, 1, 3, 4, 3, 4, 2, 2, 1, 2, 1, 1, 1, 1, 1,
-        3, 3, 3, 3, 1, 1, 1, 1, 1, 2, 1, 2, 3, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 3, 3, 3, 3, 3, 1, 2, 1, 1, 1, 2, 1,
-    ];
 
     fn newgame() -> Result<BaseGame> {
         Data::init(data_root()?)?;

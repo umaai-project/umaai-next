@@ -126,8 +126,8 @@ impl BasicAction {
             game.uma_mut().add_value(&value);
             // 增加训练次数
             game.base.train_level_count[train] += 1;
-            // 增加羁绊
-            let f = if game.uma().flags.aijiao { 9 } else { 7 };
+            // 增加羁绊：按人头类型给基值（支援卡 +7 / 理事长·记者 +5）；
+            // 爱娇的全局 +2 由 add_friendship 统一施加
             let mut hint_persons = vec![];
             let mut friend_clicked = false;
             let mut yayoi_clicked = false;
@@ -137,11 +137,16 @@ impl BasicAction {
                 if person_index < 0 {
                     continue;
                 }
-                game.add_friendship(person_index as usize, f);
-                if game.persons[person_index as usize].is_hint {
+                let p = person_index as usize;
+                let base = match game.persons[p].person_type {
+                    PersonType::Yayoi | PersonType::Reporter => 5,
+                    _ => 7,
+                };
+                game.add_friendship(p, base);
+                if game.persons[p].is_hint {
                     hint_persons.push(person_index);
                 }
-                match game.persons[person_index as usize].person_type {
+                match game.persons[p].person_type {
                     PersonType::ScenarioCard => friend_clicked = true,
                     PersonType::Yayoi => yayoi_clicked = true,
                     PersonType::Reporter => reporter_clicked = true,
@@ -151,7 +156,7 @@ impl BasicAction {
             // 生成加练或者红点事件
             if let Some(p) = hint_persons.choose(rng) {
                 let attr_prob = Data::get()?.event_prob("hint_attr")?;
-                let hint_level = if *p < 6 {
+                let hint_level = if (*p as usize) < game.deck.len() {
                     1 + game.deck[*p as usize].card_value().hint_level
                 } else {
                     1
@@ -248,7 +253,8 @@ impl BasicGame {
     }
 
     /// 建立一局基础游戏（`race_grades` 由配置层注入）
-    pub fn newgame(uma_id: u32, deck_ids: &[u32; 6], inherit: InheritInfo, race_grades: &[i32]) -> Result<Self> {
+    /// 建立一局基础游戏（`deck_ids` 长度不固定，由调用方保证；`race_grades` 由配置层注入）
+    pub fn newgame(uma_id: u32, deck_ids: &[u32], inherit: InheritInfo, race_grades: &[i32]) -> Result<Self> {
         let mut ret = BasicGame {
             base: BaseGame::new(
                 uma_id,
@@ -263,16 +269,20 @@ impl BasicGame {
         Ok(ret)
     }
 
-    /// 增加羁绊（同步支援卡面羁绊；上限 100）
+    /// 增加羁绊（爱娇的全局 +2 统一在此施加；同步支援卡面羁绊；上限 100）
     pub fn add_friendship(&mut self, person_index: usize, value: i32) {
         if person_index < self.persons.len() {
-            let old_value = self.persons[person_index].friendship;
+            // 爱娇：所有正向羁绊获取额外 +2（负向扣减不受影响）
+            let value = if value > 0 && self.uma.flags.aijiao {
+                value + 2
+            } else {
+                value
+            };
             let new_value = (self.persons[person_index].friendship + value).min(100);
             self.persons[person_index].friendship = new_value;
-            if person_index < 6 {
+            if person_index < self.deck.len() {
                 self.deck[person_index].friendship = new_value;
             }
-            let _ = old_value;
         }
     }
 }
@@ -523,7 +533,8 @@ impl Game for BasicGame {
     }
 
     fn deyilv(&mut self, person_index: i32) -> f32 {
-        if person_index < 6 {
+        // 人头下标 < 卡组长度 = 支援卡人头（依次对位 deck[i]）
+        if person_index >= 0 && (person_index as usize) < self.deck.len() {
             // `calc_training_effect` 返回 owned cumulative——先取出 `deyilv`
             // 后直接 move 进 `self.deck[i].effect`（避免 clone）。
             let eff = self.deck[person_index as usize].calc_training_effect(self, 0);
@@ -585,13 +596,8 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
+    use crate::testutil::RACE_GRADES;
     use umaai_core::testing::data_root;
-
-    /// 比赛等级表夹具（与旧仓默认 72 项一致，仅测试用）
-    const RACE_GRADES: [i32; 72] = [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 3, 4, 3, 3, 4, 3, 3, 2, 3, 1, 1, 3, 4, 3, 4, 2, 2, 1, 2, 1, 1, 1, 1, 1,
-        3, 3, 3, 3, 1, 1, 1, 1, 1, 2, 1, 2, 3, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 3, 3, 3, 3, 3, 1, 2, 1, 1, 1, 2, 1,
-    ];
 
     /// 测试用训练员（决策契约的最小实现）
     ///
@@ -671,6 +677,60 @@ mod tests {
         assert!(game.friend.out_used[0], "首段应被占用");
         assert!(!game.friend.out_used[1]);
         assert_eq!(game.unresolved_events.len(), 1, "出行事件入待触发队列");
+        Ok(())
+    }
+
+    /// 层1：爱娇对所有正向羁绊获取统一 +2（训练与事件路径共用一个出口）
+    #[test]
+    fn test_aijiao_friendship_unified() -> Result<()> {
+        Data::init(data_root()?)?;
+        let mut game = BasicGame::newgame(
+            101901,
+            &[302424, 302464, 302484, 302564, 302574, 302644],
+            InheritInfo::default(),
+            &RACE_GRADES,
+        )?;
+        // 无爱娇：羁绊按传入值入账（训练基值 / 事件数值均原值）
+        let (old0, old1, old2) = (
+            game.persons[0].friendship,
+            game.persons[1].friendship,
+            game.persons[2].friendship,
+        );
+        game.add_friendship(0, 7);
+        assert_eq!(game.persons[0].friendship, old0 + 7, "无爱娇训练羁绊 +7");
+        game.add_friendship(1, 5);
+        assert_eq!(game.persons[1].friendship, old1 + 5, "无爱娇事件羁绊原值");
+
+        // 开爱娇：所有正向羁绊 +2
+        game.uma.flags.aijiao = true;
+        game.add_friendship(2, 7);
+        assert_eq!(game.persons[2].friendship, old2 + 9, "爱娇下训练羁绊 7+2");
+        let old3 = game.persons[3].friendship;
+        game.add_friendship(3, 5);
+        assert_eq!(game.persons[3].friendship, old3 + 7, "爱娇下事件羁绊也应 +2");
+        // deck 面板羁绊同步
+        assert_eq!(game.deck[2].friendship, game.persons[2].friendship);
+        // 负向扣减不受爱娇影响
+        let before = game.persons[0].friendship;
+        game.add_friendship(0, -3);
+        assert_eq!(game.persons[0].friendship, before - 3, "负向扣减不加爱娇");
+        Ok(())
+    }
+
+    /// 层2：卡组长度不固定（5 张卡可构造并跑满整局）
+    #[test]
+    fn test_variable_deck_length() -> Result<()> {
+        Data::init(data_root()?)?;
+        let mut game = BasicGame::newgame(
+            101901,
+            &[302424, 302464, 302484, 302564, 302574],
+            InheritInfo::default(),
+            &RACE_GRADES,
+        )?;
+        assert_eq!(game.deck.len(), 5);
+        assert_eq!(game.persons.len(), 6, "5 卡 + 理事长");
+        game.run_full_game(&RaceFirstTrainer, &mut StdRng::seed_from_u64(42))?;
+        assert_eq!(game.turn(), 77, "5 张卡也应跑满 78 回合");
         Ok(())
     }
 

@@ -22,4 +22,7 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+pub mod testutil;
+
 pub mod game;

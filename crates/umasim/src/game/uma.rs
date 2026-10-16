@@ -310,13 +310,8 @@ mod tests {
 
     use super::*;
     use crate::game::FriendState;
+    use crate::testutil::RACE_GRADES;
     use umaai_core::testing::data_root;
-
-    /// 比赛等级表夹具（与旧仓默认 72 项一致，仅测试用）
-    const RACE_GRADES: [i32; 72] = [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 3, 4, 3, 3, 4, 3, 3, 2, 3, 1, 1, 3, 4, 3, 4, 2, 2, 1, 2, 1, 1, 1, 1, 1,
-        3, 3, 3, 3, 1, 1, 1, 1, 1, 2, 1, 2, 3, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 3, 3, 3, 3, 3, 1, 2, 1, 1, 1, 2, 1,
-    ];
 
     fn init() -> Result<()> {
         Data::init(data_root()?)?;
