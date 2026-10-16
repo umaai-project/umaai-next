@@ -24,7 +24,7 @@
 | 12 | 工具链统一 **stable**（钉死版本）；rustfmt 只用稳定选项，放弃 nightly 专属风格 |
 | 13 | **层界（2026-10-15 定）**：`umaai-core` 只放**纯 schema/DTO + 数据加载 + 零依赖纯函数工具 + RNG + 统一错误**；**带行为的领域类型、全部契约 trait、领域算法归 `umasim`** |
 | 14 | **归属判据**：进 core 的门槛是「**跨算法复用且与游戏、与算法无关**」；「零依赖」只是必要条件，不构成理由 |
-| 15 | 核心层依赖口径：**轻量、跨平台、通用**的库（`serde` / `serde_json` / `thiserror` / `rand` 0.9 / `int-enum`）；禁终端 / 网络 / 计算重依赖与平台相关件。呈现（着色 / 表格 / 日志 / 交互）只在 `umaai-cli` |
+| 15 | 核心层依赖口径：**轻量、跨平台、通用**的库（`serde` / `serde_json` / `thiserror` / `rand` 0.9 / `int-enum` / `log` 门面）；禁终端 / 网络 / 计算重依赖与平台相关件。呈现（着色 / 表格 / 交互）只在 `umaai-cli`；诊断与日志走核心层 `diag` 机制 + `log` 门面 |
 
 ---
 
@@ -83,7 +83,7 @@ miko_next/
 
 | 归属 | 内容 |
 |---|---|
-| `umaai-core` | 纯 schema/DTO（gamedata 静态数据类型）、数据加载（`Data` 单例 / 路径注入 / 校验）、零依赖纯函数工具（**通用统计原语**、**CRN 种子表**）、RNG 三流、统一错误 |
+| `umaai-core` | 纯 schema/DTO（gamedata 静态数据类型）、数据加载（`Data` 单例 / 路径注入 / 校验）、零依赖纯函数工具（**通用统计原语**、**CRN 种子表**）、RNG 三流、统一错误、诊断输出（`diag!` 宏 / 运行时开关 / 抑制 guard） |
 | `umasim` | 带行为的领域类型（`Uma` / `FriendState` / `BaseGame` / `simulator` …）、全部契约 trait（`Game` / 剧本钩子 / 搜索 / 策略）、领域算法（`flat_search` / `trainer/*` / `neural/*`）、搜索与 NN 私有数据形态 |
 | `umaai-cli` | 终端呈现（着色 / 表格 / 日志 / 交互）；`explain` 类方法改为返回数据或下沉本层 |
 | 剧本仓 | 剧本专属类型 / 规则 / 策略 |
@@ -108,7 +108,7 @@ miko_next/
 （呈现下沉 cli，计算层只留 trait）、`gamedata/config`（拆通用 / 剧本段）、`protocol`
 （单场景直连）、`Runner` / `Frontend` / `Config`、`neural` 的 `ActionIndex` 抽离。
 
-**不移植**：`game/{ramen,onsen}` 全部剧本实现（留 seam + 空模板）。
+**不移植**：`game/{ramen,onsen}` 全部剧本实现（留 seam + 空模板）。搜索层的**批量 rollout 后端**（跨 rollout 攒批）、**leaf 截断估值**（`max_depth > 0`）与 **NN 样本导出**亦不移植：前两者延后到有真实需求与可验证实现时，后者随神经阶段（见 open_items #12–#14）。
 
 ---
 
@@ -181,7 +181,7 @@ miko_next/
 | **P0′** | 建仓：目录 + `git init` + workspace + 6 crate 空骨架 + toolchain/fmt/CI + `docs/` + `gamedata/` | ✅ 已完成 |
 | **P1′** | `umaai-core`：RNG 三流（逐字移植）+ 统一错误 + gamedata 纯 schema/DTO + 数据加载（`Data` / 路径注入 / 校验）+ 零依赖纯函数工具（通用统计原语、CRN 种子表） | ✅ 已完成（配置层 `default_config.toml` / `GameConfig` 归 P4′；CRN 只落 `seed_at`） |
 | **P2′** | `umasim` 基座：带行为的领域类型（uma / support_card / inherit / base，去剧本）+ 契约 trait（`Game` / `Trainer` / `TrainingValueSource`） | ✅ 已完成（剧本钩子 `ScenarioRules` / `ScenarioLifecycle` 经拍板延后到有具体剧本时，见 open_items #10；`simulator` 为旧仓空壳未移植） |
-| **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | — |
+| **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | ✅ 已完成（搜索评分为单轴口径，PT 偏好折算率归 `SearchConfig`；批量后端 / leaf 截断估值 / NN 样本导出延后，见 open_items #12–#14；`BasicGame` 接参考实现 + 随机训练员） |
 | **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | — |
 | **P5′** | `umaai-cli`：呈现全入 cli；`BasicGame` 跑满回合冒烟 | — |
 | **P6′** | `umaai-tools`：探针 / bench / baseline runner + `--update` | — |
@@ -194,7 +194,7 @@ miko_next/
 - workspace 仅含 6 个 crate，核心 `git diff` 在接入新剧本时为空
 - 核心 / 引擎 `cargo check` / `test` 全绿，`clippy` 无 warning
 - `umaai-core` / `umasim` 的 lib 中零终端依赖；终端依赖只在 cli；dev 重依赖只在 tools
-- `umaai-core` 只依赖白名单库（`serde` / `serde_json` / `thiserror` / `rand`）；数据载入无日志副作用
+- `umaai-core` 只依赖白名单库（`serde` / `serde_json` / `thiserror` / `rand` / `int-enum` / `log` 门面）；数据载入无日志副作用
 - `BasicGame` 固定种子可复现并跑完全部回合
 - baseline 可回归、`--update` 可回写
 - 核心枚举 `non_exhaustive`、serde 默认值齐全，新增钩子均带默认实现

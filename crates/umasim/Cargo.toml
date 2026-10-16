@@ -12,3 +12,5 @@ enum-iterator.workspace = true
 hashbrown.workspace = true
 rand_distr.workspace = true
 rand.workspace = true
+rayon.workspace = true
+log.workspace = true

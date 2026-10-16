@@ -3,6 +3,11 @@ name = "umaai-core"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# 诊断日志（`diag!`）编译期开关：默认开启；关闭后宏展开为空，零运行时开销
+default = ["diag"]
+diag = []
+
 [dependencies]
 int-enum.workspace = true
 rand.workspace = true

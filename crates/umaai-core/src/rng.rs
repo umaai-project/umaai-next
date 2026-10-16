@@ -13,8 +13,8 @@ use rand::RngCore;
 /// SplitMix64 黄金比例 gamma（标准常数，冻结不可改）
 pub const GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// SplitMix64 finalizer 混淆常数 A（冻结不可改）
-const MIX_A: u64 = 0xBF58_476D_1CE4_E5B9;
+/// SplitMix64 finalizer 混淆常数 A（冻结不可改；[`crate::crn::RolloutSeeds::stage_seed`] 亦用它）
+pub const MIX_A: u64 = 0xBF58_476D_1CE4_E5B9;
 /// SplitMix64 finalizer 混淆常数 B（冻结不可改）
 const MIX_B: u64 = 0x94D0_49BB_1331_11EB;
 
@@ -50,15 +50,13 @@ pub fn derive_seed(base: u64, parts: &[u64]) -> u64 {
 /// 从父流取 1 个随机字，派生一条一次性的局部随机流
 ///
 /// 用于把「消耗次数随局面变化」的子算法与父流隔离：父流**恒定消耗 1 次**，
-/// 子算法内部无论抽多少次都只推进局部流，因此改子算法不再位移父流后续的随机点。
-///
+/// 子算法内部抽多少次都只推进局部流，改子算法不再位移父流后续随机点。
 /// `tag` 必须是冻结常量，且不同用途取不同值——同 tag 同父流值会得到同一条局部流。
 ///
 /// # 已知耦合
 ///
-/// 局部流的 master 取自父流在派生点的**当前取值**，因此局部流内容依赖父流此前消耗了几次：
-/// 它只隔离下游（子算法内部怎么改都不影响父流后续），**隔离不了上游**。
-/// 需要与父流消耗次数无关的隔离时，应改用 `(rule_master, turn, tag)` 形式直接派生。
+/// 局部流 master 取自父流在派生点的**当前取值**：只隔离下游、隔离不了上游；
+/// 需要与父流消耗次数无关的隔离时，改用 `(rule_master, turn, tag)` 直接派生。
 pub fn fork_local_stream(parent: &mut impl RngCore, tag: u64) -> SplitmixRng {
     SplitmixRng::new(derive_seed(parent.next_u64(), &[tag]))
 }
