@@ -3,6 +3,12 @@ name = "umasim"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# 并行后端（rayon）：默认开启；关闭后批量 rollout 退化到串行分支，rayon 整链不进依赖图
+# （无线程平台的下游，如 wasm，用 `default-features = false` 取串行形态）
+default = ["parallel"]
+parallel = ["dep:rayon"]
+
 [dependencies]
 umaai-core.workspace = true
 anyhow.workspace = true
@@ -12,5 +18,5 @@ enum-iterator.workspace = true
 hashbrown.workspace = true
 rand_distr.workspace = true
 rand.workspace = true
-rayon.workspace = true
+rayon = { workspace = true, optional = true }
 log.workspace = true

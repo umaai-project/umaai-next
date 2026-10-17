@@ -1,26 +1,24 @@
 //! 静态数据加载与全局便捷层
 //!
-//! 单一数据根（由宿主注入路径）一次载入 5 张静态表，经清单与语义校验后产出值类型
-//! [`Data`]。载入**不写日志**：载入统计经 [`Data::stat`] 返回，由上层打印。
+//! 数据来源由宿主注入（见 [`DataSource`]）：目录、内嵌资产、内存 JSON 三种形态都支持，
+//! 一次载入 5 张静态表，经清单与语义校验后产出值类型 [`Data`]。载入**不写日志**：载入
+//! 统计经 [`Data::stat`] 返回，由上层打印。
 //!
 //! 自由比赛掩码依赖「比赛等级表」（用户可调，属配置层），故不在载入时计算，
 //! 由 `umasim` 在配置就绪后补算。
 
 pub mod manifest;
+pub mod source;
 pub mod validate;
 
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    sync::OnceLock,
-};
-
-use serde::de::DeserializeOwned;
+use std::{collections::BTreeMap, path::Path, sync::OnceLock};
 
 use crate::{
     UmaError, UmaResult,
     gamedata::{EventCollection, EventData, GameConstants, SupportCardData, UmaData},
 };
+
+pub use source::{DataFile, DataSource, DirSource, MemorySource};
 
 /// 静态数据（值类型）
 #[derive(Debug)]
@@ -51,21 +49,26 @@ pub struct LoadStat {
 }
 
 impl Data {
-    /// 载入数据根 `root` 下的全部静态表
+    /// 从任意数据来源载入全部静态表
     ///
     /// 顺序：清单校验（版本 + 必需文件）→ 逐表解析 → 语义校验。
-    pub fn load(root: impl AsRef<Path>) -> UmaResult<Self> {
-        let root = root.as_ref();
-        let _ = manifest::Manifest::load(root)?;
+    pub fn from_source<S: DataSource>(source: &S) -> UmaResult<Self> {
+        let manifest: manifest::Manifest = source.table(DataFile::Manifest)?;
+        manifest.check()?;
         let data = Self {
-            uma: read_json(root, "umaDB.json")?,
-            card: read_json(root, "cardDB.json")?,
-            text: read_json(root, "text_data_dict.json")?,
-            events: read_json(root, "events.json")?,
-            consts: read_json(root, "constants.json")?,
+            uma: source.table(DataFile::Uma)?,
+            card: source.table(DataFile::Card)?,
+            text: source.table(DataFile::Text)?,
+            events: source.table(DataFile::Events)?,
+            consts: source.table(DataFile::Constants)?,
         };
         validate::validate(&data)?;
         Ok(data)
+    }
+
+    /// 载入数据根 `root` 下的全部静态表（目录来源的便捷入口）
+    pub fn load(root: impl AsRef<Path>) -> UmaResult<Self> {
+        Self::from_source(&DirSource::new(root))
     }
 
     /// 载入统计
@@ -85,12 +88,14 @@ impl Data {
 
     /// 按 ID 取马娘
     pub fn get_uma(&self, id: u32) -> UmaResult<&UmaData> {
-        self.uma.get(&id.to_string()).ok_or_else(|| missing("umaDB.json", id))
+        self.uma.get(&id.to_string()).ok_or_else(|| missing(DataFile::Uma, id))
     }
 
     /// 按 ID 取支援卡
     pub fn get_card(&self, id: u32) -> UmaResult<&SupportCardData> {
-        self.card.get(&id.to_string()).ok_or_else(|| missing("cardDB.json", id))
+        self.card
+            .get(&id.to_string())
+            .ok_or_else(|| missing(DataFile::Card, id))
     }
 
     /// 取角色名；未知返回 `"未知"`
@@ -123,32 +128,40 @@ impl Data {
     }
 }
 
-/// 全局数据实例（初始化后只读）
-static GLOBAL: OnceLock<Data> = OnceLock::new();
-/// 初始化时使用的数据根（用于幂等比对）
-static GLOBAL_ROOT: OnceLock<PathBuf> = OnceLock::new();
+/// 全局数据实例与来源标识（初始化后只读；放在同一锁里，杜绝「实例与标识不同步」）
+static GLOBAL: OnceLock<(String, Data)> = OnceLock::new();
 
 impl Data {
-    /// 初始化全局数据（幂等）
+    /// 初始化全局数据（幂等），数据根路径形态
     ///
     /// 已初始化且数据根相同 → 返回既有实例；数据根不同 → 报错（不做热更，换数据需重启）。
-    /// 并发首次初始化由 [`OnceLock`] 串行化；同进程内应只在启动时调用一次。
+    /// 同进程内应只在启动时调用一次：并发首启由 [`OnceLock`] 裁决谁装上，**不按调用先后**，
+    /// 落败的一方按标识不匹配报错（不静默改用别人的数据）。
     pub fn init(root: impl AsRef<Path>) -> UmaResult<&'static Data> {
-        let root = root.as_ref().to_path_buf();
-        if let Some(existing) = GLOBAL.get() {
-            return match GLOBAL_ROOT.get() {
-                Some(cur) if *cur == root => Ok(existing),
-                Some(cur) => Err(UmaError::InvalidState(format!(
-                    "数据已用 {} 初始化，不能改为 {}（换数据需重启）",
-                    cur.display(),
-                    root.display()
-                ))),
-                None => Ok(existing),
-            };
+        Self::init_from(&DirSource::new(root))
+    }
+
+    /// 初始化全局数据（幂等），任意数据来源
+    ///
+    /// 幂等比对用[来源标识](DataSource::key)：标识相同 → 返回既有实例；不同 → 报错。
+    pub fn init_from<S: DataSource>(source: &S) -> UmaResult<&'static Data> {
+        let key = source.key();
+        if let Some((cur, data)) = GLOBAL.get() {
+            return Self::same_source(cur, &key, data);
         }
-        let data = Self::load(&root)?;
-        let _ = GLOBAL_ROOT.set(root);
-        Ok(GLOBAL.get_or_init(|| data))
+        let data = Self::from_source(source)?;
+        let (cur, stored) = GLOBAL.get_or_init(|| (key.clone(), data));
+        Self::same_source(cur, &key, stored)
+    }
+
+    /// 校验来源标识一致（不一致即报错，不回退到已有实例）
+    fn same_source(cur: &str, key: &str, data: &'static Data) -> UmaResult<&'static Data> {
+        if cur == key {
+            return Ok(data);
+        }
+        Err(UmaError::InvalidState(format!(
+            "数据已用 {cur} 初始化，不能改为 {key}（换数据需重启）"
+        )))
     }
 
     /// 取全局实例；未初始化时报错
@@ -158,21 +171,14 @@ impl Data {
 
     /// 取全局实例；未初始化返回 `None`
     pub fn try_get() -> Option<&'static Data> {
-        GLOBAL.get()
+        GLOBAL.get().map(|(_, data)| data)
     }
 }
 
-/// 读并解析数据文件
-fn read_json<T: DeserializeOwned>(root: &Path, name: &str) -> UmaResult<T> {
-    let path = root.join(name);
-    let text = std::fs::read_to_string(&path).map_err(|source| UmaError::Io { path: path.clone(), source })?;
-    serde_json::from_str(&text).map_err(|source| UmaError::Parse { path, source })
-}
-
 /// 构造「未找到 ID」的校验错误
-fn missing(file: &str, id: u32) -> UmaError {
+fn missing(file: DataFile, id: u32) -> UmaError {
     UmaError::Validation {
-        target: format!("{file}/{id}"),
+        target: format!("{}/{}", file.name(), id),
         detail: "未找到该 ID（可能需要更新数据）".to_string(),
     }
 }

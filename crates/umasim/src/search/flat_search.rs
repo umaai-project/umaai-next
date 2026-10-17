@@ -14,11 +14,11 @@ use anyhow::{Context, Result, bail, ensure};
 use log::{debug, warn};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use rayon::prelude::*;
 use umaai_core::RolloutSeeds;
 use umaai_core::diag::DiagGuard;
 
 use super::config::SearchConfig;
+use super::par;
 use super::result::{ActionResult, OrderedRollouts, SearchOutput};
 use super::searchable::FlatSearchGame;
 use super::terminal::{NoTerminal, RolloutOutcome, TerminalRecord};
@@ -152,6 +152,8 @@ where
     /// 「以成功为条件」的分布，各候选条件还互不相同，排序会被系统性污染而分数上看不出来。
     strict_rollout: bool,
     /// 是否并行执行 rollout；关闭后串行执行，结果逐位一致（对照与调试用）
+    ///
+    /// 未编入并行后端（crate 特性 `parallel` 关闭）时恒为 `false`。
     parallel: bool,
     /// 成本探针出口（仅测量用，默认 `None`）
     probe: Option<Arc<Mutex<Vec<SearchProbe>>>>,
@@ -167,7 +169,7 @@ where
             rollout_trainer: G::default_rollout_trainer(),
             config,
             strict_rollout: false,
-            parallel: true,
+            parallel: par::supported(),
             probe: None,
         }
     }
@@ -200,9 +202,17 @@ where
     }
 
     /// 设置是否并行执行 rollout（关闭后串行，结果与并行逐位一致）
+    ///
+    /// 未编入并行后端时（crate 特性 `parallel` 关闭）请求并行会被**降级为串行**；
+    /// 当前构建是否编入并行后端见 [`parallel_supported`](super::parallel_supported)。
     pub fn with_parallel(mut self, parallel: bool) -> Self {
-        self.parallel = parallel;
+        self.parallel = parallel && par::supported();
         self
+    }
+
+    /// 当前是否走并行 rollout（未编入并行后端时恒为 `false`）
+    pub fn is_parallel(&self) -> bool {
+        self.parallel
     }
 
     /// 挂上成本探针出口（仅测量用；不改决策语义）
@@ -466,7 +476,7 @@ where
         };
 
         let collected: Vec<CandidateAccum<T::Stats>> = if self.parallel {
-            actions.par_iter().map(run).collect::<Result<Vec<_>>>()?
+            par::try_map_slice(actions, run)?
         } else {
             actions.iter().map(run).collect::<Result<Vec<_>>>()?
         };
@@ -510,7 +520,7 @@ where
             Ok(acc)
         };
         let mut collected: Vec<CandidateAccum<T::Stats>> = if self.parallel {
-            actions.par_iter().map(run_initial).collect::<Result<Vec<_>>>()?
+            par::try_map_slice(actions, run_initial)?
         } else {
             actions.iter().map(run_initial).collect::<Result<Vec<_>>>()?
         };
@@ -598,7 +608,7 @@ where
         }
         let run_one = |k: usize| rollout(game, action, seeds.seed_at(offset + k));
         let outcomes: Vec<Result<RolloutOutcome<T>>> = if self.parallel {
-            (0..n).into_par_iter().map(run_one).collect()
+            par::map_range(n, run_one)
         } else {
             (0..n).map(run_one).collect()
         };
@@ -885,6 +895,30 @@ mod tests {
             assert_eq!(x.stdev(), y.stdev());
         }
         Ok(())
+    }
+
+    /// 层1：并行开关跟随特性 —— 未编入并行后端时请求并行被降级为串行
+    #[test]
+    fn test_parallel_flag_follows_feature() {
+        let supported = crate::search::parallel_supported();
+        assert_eq!(
+            FlatSearch::<BasicGame>::new(SearchConfig::default()).is_parallel(),
+            supported,
+            "默认开关应等于本构建的并行后端能力"
+        );
+        assert_eq!(
+            FlatSearch::<BasicGame>::new(SearchConfig::default())
+                .with_parallel(true)
+                .is_parallel(),
+            supported,
+            "显式请求并行不得绕过特性缺失"
+        );
+        assert!(
+            !FlatSearch::<BasicGame>::new(SearchConfig::default())
+                .with_parallel(false)
+                .is_parallel(),
+            "显式关闭并行必须生效"
+        );
     }
 
     /// 层1：剧本未声明支持截断估值时，`max_depth > 0` 在入口被拒

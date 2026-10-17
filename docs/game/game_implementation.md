@@ -52,7 +52,7 @@
 | 育成结束 | `game/traits.rs::on_simulation_end`、`game/base/basic.rs`、`game/ramen/game.rs::add_mandatory_events` |
 | 在线记录 / 协议 | `crates/umaai/src/`（`protocol/`、`decision/record`、`plot/`） |
 
-数据文件（工作区 `gamedata/`）：`constants.json`（通用常量）、`default_config.toml`（默认配置与可覆盖项）、`events.json`（事件表）、`cardDB.json`、`umaDB.json`、`scenario_onsen.json`、`scenario_ramen.json`、`text_data_dict.json`。
+数据文件（工作区 `gamedata/`）：`constants.json`（通用常量）、`ai_config.toml`（默认配置与可覆盖项）、`events.json`（事件表）、`cardDB.json`、`umaDB.json`、`scenario_onsen.json`、`scenario_ramen.json`、`text_data_dict.json`。
 
 ---
 

@@ -19,3 +19,17 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: test
         run: cargo test --workspace --release
+      # 各成员自己的门禁关掉后仍须无 warning 编过（diag / 文件通道 / 着色 / 并行各自的 cfg 分支）
+      - name: clippy (no default features)
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+      # 串行引擎形态：下游 default-features = false 的构建面（引擎链上 rayon 整块剪掉）
+      - name: clippy (serial engine)
+        run: cargo clippy -p umasim -p umaai --all-targets --no-default-features -- -D warnings
+      - name: test (serial engine)
+        run: cargo test -p umasim -p umaai --release --no-default-features
+      - name: serial engine prunes rayon
+        run: |
+          if cargo tree -p umaai --no-default-features -e normal | grep -q "rayon v"; then
+            echo "rayon 仍在引擎链依赖图中：检查内部依赖的 default-features 与特性透传" >&2
+            exit 1
+          fi

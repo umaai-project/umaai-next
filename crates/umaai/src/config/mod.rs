@@ -1,14 +1,20 @@
-//! 引擎配置：默认层 + 宿主注入的覆盖层
+//! 引擎配置：默认层 + 覆盖层
 //!
-//! 默认值**只存在于** `gamedata/default_config.toml`（单一真源），Rust 侧不为同名字段
-//! 提供默认值：缺字段即报错并指明字段路径，避免「代码缺省 / 文件缺省」两份真相。
-//! 覆盖层与默认层同构、字段全 `Option`（`None` = 沿用默认层），段缺失即整段沿用，
-//! 不会把默认值清空。
+//! 两份文件**同名不同位**，都叫 `ai_config.toml`：
+//!
+//! - **默认层**：数据根内，字段**必须齐全**，Rust 侧不为同名字段提供默认值（单一真源）；
+//!   缺字段即报错并指明字段路径，避免「代码缺省 / 文件缺省」两份真相。
+//! - **覆盖层**：宿主目录（桌面入口取当前目录）内，与默认层同构、字段全 `Option`
+//!   （`None` = 沿用默认层），段缺失即整段沿用，不会把默认值清空；**存在才合并**。
 //!
 //! 配置与程序同版本发布，故对**未知键严格报错**（拼错键必须被看见）；对外协议
 //! （帧解析）另按宽容口径，二者不共用纪律。
 //!
 //! 剧本专属配置不进本层：剧本仓自持自己的配置段，引擎只保留剧本无关的通用段。
+//!
+//! 非路径宿主（Web / Android）把默认层与覆盖层的 TOML 文本喂 [`Config::parse`]：
+//! 静态表的多来源由 `umaai_core::DataSource` 承担，**配置不纳入该来源**——TOML 文本与
+//! JSON 表是两种形态，混进一个 trait 只会让两边都变重。
 
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -16,8 +22,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use umasim::{game::InheritInfo, search::SearchConfig};
 
-/// 数据根内的默认配置文件相对路径
-pub const DEFAULT_CONFIG_FILE: &str = "default_config.toml";
+/// 配置文件名：数据根内是**默认层**（字段齐全、单一真源），宿主目录内是**覆盖层**（字段可选）
+pub const CONFIG_FILE: &str = "ai_config.toml";
 
 /// 引擎配置（只含剧本无关的通用段）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -105,9 +111,22 @@ impl Config {
         Self::parse(&base_text, overlay_text.as_deref()).with_context(|| format!("默认配置来源: {}", base.display()))
     }
 
-    /// 载入数据根下的默认配置（`<data_root>/default_config.toml`）
+    /// 载入数据根下的默认层（`<data_root>/ai_config.toml`）+ 显式指定的覆盖层文件
+    ///
+    /// 覆盖层路径给了就必须存在（探针 / 测试要的就是「路径写错立刻报错」）；想要
+    /// 「存在才合并」的约定形态用 [`Self::load_with_overlay_file`]。
     pub fn load_from_data_root(data_root: impl AsRef<Path>, overlay: Option<&Path>) -> Result<Self> {
-        Self::load(data_root.as_ref().join(DEFAULT_CONFIG_FILE), overlay)
+        Self::load(data_root.as_ref().join(CONFIG_FILE), overlay)
+    }
+
+    /// 载入：数据根默认层 + **约定覆盖层**（`<dir>/ai_config.toml`，存在才合并）
+    ///
+    /// 覆盖层与默认层同名，靠目录区分角色：桌面入口传工作目录。文件缺席不报错——
+    /// 首次运行本就没有覆盖层，这正是「只留一个覆盖类配置文件」的默认形态。
+    pub fn load_with_overlay_file(data_root: impl AsRef<Path>, dir: impl AsRef<Path>) -> Result<Self> {
+        let overlay = dir.as_ref().join(CONFIG_FILE);
+        let overlay = overlay.exists().then_some(overlay);
+        Self::load_from_data_root(data_root, overlay.as_deref())
     }
 
     /// 解析 TOML 文本（默认层 + 可选覆盖层文本），供内嵌 / 测试场景复用
@@ -460,6 +479,28 @@ standard = {}
     fn test_overlay_unknown_key_rejected() {
         let err = Config::parse(&base(), Some("[sim]\numaa = 1\n")).unwrap_err();
         assert!(format!("{err:#}").contains("umaa"), "未知名应出现在错误里");
+    }
+
+    /// 层1：约定覆盖层同名不同目录，存在才合并、缺席不报错
+    #[test]
+    fn test_overlay_file_convention() -> Result<()> {
+        let tmp = umaai_core::testing::workspace_root()?.join("target/test-tmp/umaai-config-overlay");
+        let root = tmp.join("data");
+        let host = tmp.join("host");
+        std::fs::create_dir_all(&root)?;
+        std::fs::create_dir_all(&host)?;
+        std::fs::write(root.join(CONFIG_FILE), base())?;
+
+        let cfg = Config::load_with_overlay_file(&root, &host)?;
+        assert_eq!(cfg.sim.uma, 100101, "覆盖层缺席时只用默认层，且不报错");
+
+        std::fs::write(host.join(CONFIG_FILE), "[sim]\numa = 102601\n")?;
+        let cfg = Config::load_with_overlay_file(&root, &host)?;
+        assert_eq!(cfg.sim.uma, 102601, "覆盖层字段生效");
+        assert_eq!(cfg.sim.seed, 42, "未提及字段沿用默认层");
+
+        std::fs::remove_dir_all(&tmp)?;
+        Ok(())
     }
 
     /// 层1：预设按名合并，同名覆盖、异名保留

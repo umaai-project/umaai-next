@@ -8,9 +8,12 @@
 
 pub mod config;
 pub mod flat_search;
+mod par;
 pub mod result;
 pub mod searchable;
 pub mod terminal;
+
+pub use par::supported as parallel_supported;
 
 pub use config::SearchConfig;
 pub use flat_search::{FlatSearch, SearchProbe};

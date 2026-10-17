@@ -2,7 +2,7 @@
 //!
 //! 按项目约定：集成测试逐条 `print` 观测，末尾经 `Checker` 汇总，有失败才返回 `Err`。
 
-use umaai_core::{Data, UmaError, UmaResult, data::validate::validate, testing};
+use umaai_core::{Data, DataFile, DirSource, MemorySource, UmaError, UmaResult, data::validate::validate, testing};
 
 /// 观测收集器：逐条打印 `OK` / `NG`，末尾有 NG 则返回 `Err`
 struct Checker {
@@ -74,7 +74,7 @@ fn test_load_real_data() -> UmaResult<()> {
     c.finish()
 }
 
-/// 全局初始化幂等：同根重复调用返回同一实例，异根报错
+/// 全局初始化幂等：同源重复调用返回同一实例，异源报错
 #[test]
 fn test_init_idempotent() -> UmaResult<()> {
     let root = testing::data_root()?;
@@ -84,9 +84,71 @@ fn test_init_idempotent() -> UmaResult<()> {
     c.check(std::ptr::eq(a, b), "同数据根重复初始化返回同一实例");
     c.check(Data::try_get().is_some(), "初始化后 try_get 可取值");
     c.check(
+        Data::init_from(&DirSource::new(&root)).is_ok(),
+        "同来源经 init_from 命中既有实例",
+    );
+    c.check(
         Data::init(root.join("..").join("gamedata")).is_err(),
         "异数据根初始化报错",
     );
+    c.check(
+        Data::init_from(&MemorySource::new("mem:other")).is_err(),
+        "异来源标识初始化报错（不静默改数据）",
+    );
+    c.finish()
+}
+
+/// 内存来源：真实数据的 JSON 文本与 JSON 值两条形态都能载入，结果与目录来源一致
+#[test]
+fn test_load_from_memory_source() -> UmaResult<()> {
+    let root = testing::data_root()?;
+    let payloads = [
+        DataFile::Manifest,
+        DataFile::Uma,
+        DataFile::Card,
+        DataFile::Text,
+        DataFile::Events,
+        DataFile::Constants,
+    ];
+    let mut text_src = MemorySource::new("mem:text");
+    let mut json_src = MemorySource::new("mem:json");
+    for file in payloads {
+        let path = root.join(file.name());
+        let text = std::fs::read_to_string(&path).map_err(|source| UmaError::Io { path: path.clone(), source })?;
+        let value: serde_json::Value =
+            serde_json::from_str(&text).map_err(|source| UmaError::Parse { path: path.clone(), source })?;
+        text_src = text_src.with_text(file, text);
+        json_src = json_src.with_json(file, value);
+    }
+
+    // 目录来源只取统计与样本 ID，随后立即释放，避免三份数据集同时驻留
+    let dir = Data::load(&root)?;
+    let stat_dir = dir.stat();
+    let uma_id = dir.uma.values().next().expect("马娘表非空").game_id;
+    let card_id = dir.card.values().next().expect("支援卡表非空").card_id;
+    drop(dir);
+
+    let from_text = Data::from_source(&text_src)?;
+    let from_json = Data::from_source(&json_src)?;
+    println!("目录 {stat_dir:?}");
+    println!("文本 {:?}", from_text.stat());
+    println!("JSON 值 {:?}", from_json.stat());
+
+    let mut c = Checker::new();
+    c.check(from_text.stat() == stat_dir, "文本来源的载入统计与目录来源一致");
+    c.check(from_json.stat() == stat_dir, "JSON 值来源的载入统计与目录来源一致");
+    c.check(from_text.get_uma(uma_id).is_ok(), "文本来源可按 ID 取马娘");
+    c.check(from_json.get_uma(uma_id).is_ok(), "JSON 值来源可按 ID 取马娘");
+    c.check(from_json.get_card(card_id).is_ok(), "JSON 值来源可按 ID 取支援卡");
+    c.check(
+        from_text.system_event("extra_train").is_ok(),
+        "文本来源可用系统事件快捷方法",
+    );
+
+    let empty = MemorySource::new("mem:empty");
+    let missing = Data::from_source(&empty);
+    println!("缺项来源 → {missing:?}");
+    c.check(missing.is_err(), "来源缺项必须报错，不得静默当空表");
     c.finish()
 }
 

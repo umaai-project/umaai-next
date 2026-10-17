@@ -75,7 +75,7 @@ miko_next/
 
 - **形态**：独立仓，不在本 workspace；**crate 命名 `umaai-<剧本>`**（如 `umaai-ramen`，2026-10-17 拍板取简），只依赖 `umaai-core` / `umasim` / `umaai`。
 - **内容**：剧本领域类型（`Game` / `ActionEnum` / `Person`）、剧本专属协议段解析、persons 构造与阶段自持（内部强类型枚举 + 中间状态在局面里，对外只投影 `StageId`）、决策（`Trainer` 或 `FlatSearchGame`）、剧本专属配置段与数据、测试夹具（真机帧）。
-- **数据**：引擎数据根（`gamedata/`：通用表 + 默认配置）与剧本数据（如拉面的 `ramen.json`）**各自独立、都由宿主注入**，**位置按具体终端定**（桌面 / Android 等不同），引擎与剧本都不写死路径；剧本数据不进本仓。
+- **数据**：引擎数据根（`gamedata/`：通用表 + 默认配置）与剧本数据（如拉面的 `ramen.json`）**各自独立、都由宿主注入**，**位置按具体终端定**（桌面 / Android 等不同），引擎与剧本都不写死路径；剧本数据不进本仓。引擎静态表经 `DataSource` 载入（目录 / 内存，见 §9 数据源定稿），剧本数据由剧本侧自持
 - **依赖方式**：**不进 crates.io**，因此较老的 `publish = false` 说法只挡发布、不挡使用——开发期 `path` 依赖（并列目录），稳定期 git `tag` 钉住；`umaai-tests`（`Checker` / 夹具）同样可经 path / git 直接用，无需另抽薄包。
 
   ```toml
@@ -86,7 +86,7 @@ miko_next/
   umaai-cli  = { path = "../umaai-next/crates/umaai-cli" }   # 仅终端入口需要（样例面）
   # 稳定期（同一 repo、同一 tag，cargo 只解析一份检出）
   # umaai = { git = "<engine repo>", tag = "engine-v0.1.0" }
-  # 下游（Web / Android）：自喂帧、无文件监听
+  # 下游（Web / Android）：自喂帧、无文件监听；一并剪掉并行后端（两特性都在 default 里）
   # umaai = { git = "<engine repo>", tag = "engine-v0.1.0", default-features = false }
   ```
 
@@ -136,7 +136,7 @@ miko_next/
 
 - **入口装配点是 API 不是 bin**：宿主各自装配（终端 / Web / Android）；帧来源不绑文件通道——`Session::step(&RawFrame)` 已与 IO 解耦，通道只是主线的来源之一。
 - **平台守门**（已立项）：`wasm32-unknown-unknown` 与 Android NDK 目标各做一次**无终端依赖、无平台绑定依赖**的编译检查（见 §9「下游可用性改造」）。
-- **数据源**：下游常见内嵌 / 内存资产，`Data` / `Config` 现只有路径注入；`DataSource`（目录 / 内嵌 / 内存多源）落地前，下游只能先落盘（见 open_items）。
+- **数据源**：下游常见内嵌 / 内存资产，`Data` 经 `DataSource`（目录 / 内嵌 / 内存多源）载入，不假设数据在磁盘上；配置仍走文本入口（见 §5）。
 
 ---
 
@@ -163,17 +163,18 @@ miko_next/
 ## 5. 数据与配置
 
 - **单一数据根** `gamedata/`（平铺）：`cardDB.json` / `umaDB.json` / `events.json` /
-  `text_data_dict.json` / `constants.json` / `default_config.toml` + `manifest.json`（清单 + `schema_version`，唯一校验入口）
+  `text_data_dict.json` / `constants.json` / `ai_config.toml` + `manifest.json`（清单 + `schema_version`，唯一校验入口）
 - **剧本数据外置**：`scenario_*.json` 不进本仓
 - **加载收敛到单一 `data` 模块（落在 `umaai-core`）**：
-  - 值类型 `Data`（`Data::load(root) -> Result<Data>`，一次载入 + 校验）
-  - 全局便捷层 `Data::init(root)`（幂等：已初始化且 root 相同 → `Ok`；root 不同 → `Err`）/ `Data::get() -> &'static Data` / `try_get()`
+  - 值类型 `Data`（`Data::from_source(&src) -> Result<Data>`，一次载入 + 校验；`Data::load(root)` 是目录来源的便捷入口）
+  - **数据来源 `DataSource`**（2026-10-17 落地）：只出「取一项数据」与「来源标识」两件事，**不假设数据在磁盘上**；内置 `DirSource`（目录）与 `MemorySource`（宿主自备：JSON 值或 JSON 文本），宿主也可自持实现；**数据形态收 JSON 值与 JSON 文本两种**，都直解到目标类型、不经中间 `Value` 树
+  - 全局便捷层 `Data::init(root)` / `Data::init_from(&src)`（幂等：已初始化且**来源标识**相同 → `Ok`；不同 → `Err`）/ `Data::get() -> &'static Data` / `try_get()`
   - 整表与领域快捷方法（`Data::events()`、`Data::system_event(key)`、`Data::event_prob(key)` …）
   - **不保留旧 `global!` 宏**，统一显式调用
   - **载入不写日志**（`log` 不入 core）：载入统计返回给调用方，由上层打印
-- **路径由宿主注入**（方案 A 起步）；内部经极薄访问器取字节，**预留 `DataSource` 形状**（方案 B：目录 / 内嵌 / 内存多源可叠加）
-- **配置载入**：默认层 `gamedata/default_config.toml`（唯一真源、字段齐全）+ 宿主注入的可选覆盖层（同构、字段全可选、段缺失整段沿用）；剧本专属配置段不进本仓；比赛等级表等具名预设按名取、缺失即报错
-- **不做热更新**：更新 = 换磁盘文件 + 重启生效；`manifest.schema_version` 做数据/程序一致性校验
+- **配置两份、同名不同位（2026-10-17 拍板）**：默认层 `<数据根>/ai_config.toml`（唯一真源、字段齐全）+ 覆盖层 `<宿主目录>/ai_config.toml`（同构、字段全可选、段缺失整段沿用，**存在才合并**）；桌面入口的宿主目录＝当前目录（`Config::load_with_overlay_file`），非路径宿主自带两份 TOML 文本走 `Config::parse`；覆盖类配置文件**只此一个**，不再有任意路径的覆盖层开关。覆盖层在数据根之外，**数据更新整目录覆盖时不会冲掉用户配置**
+- **配置不入数据来源**（`DataSource` 只管静态表）；剧本专属配置段不进本仓；比赛等级表等具名预设按名取、缺失即报错
+- **不做热更新**：更新 = 换数据 + 重启生效；`manifest.schema_version` 做数据/程序一致性校验
 - **测试防重入**：test-only 持锁安装（`TEST_LOCK` 串行 + `Drop` 清理）；需要不同数据的测试走值类型（绕过全局）
 
 ---
@@ -200,7 +201,7 @@ miko_next/
 
 - 放弃独立 GUI 更新器形态；改由**入口层**（`umaai-cli`）承担
 - 启动时默认**轻量检查 + 提示**（发现新数据 → 询问是否更新），显式 `umaai update` 做真正下载/覆盖
-- **数据更新**（本项目 `gamedata`）：下载 → 覆盖 → **提示重启生效**
+- **数据更新**（本项目 `gamedata`）：下载 → 覆盖 → **提示重启生效**（用户覆盖层 `ai_config.toml` 在工作目录、不在数据根，不受覆盖影响）
 - **自身更新**：Windows 无法覆盖运行中 exe → 下载新 exe → rename 旧的 → 拉起新的 → 退出
 - **可降级**：`--no-update` / 配置关闭 / 短超时 / 失败不阻断启动
 - `ura_data`（小黑板数据）是否纳入：**待定**
@@ -228,7 +229,7 @@ miko_next/
 | 阶段 | 交付 | 状态 |
 |---|---|---|
 | **P0′** | 建仓：目录 + `git init` + workspace + 6 crate 空骨架 + toolchain/fmt/CI + `docs/` + `gamedata/` | ✅ 已完成 |
-| **P1′** | `umaai-core`：RNG 三流（逐字移植）+ 统一错误 + gamedata 纯 schema/DTO + 数据加载（`Data` / 路径注入 / 校验）+ 零依赖纯函数工具（通用统计原语、CRN 种子表） | ✅ 已完成（配置层 `default_config.toml` / `GameConfig` 归 P4′；CRN 只落 `seed_at`） |
+| **P1′** | `umaai-core`：RNG 三流（逐字移植）+ 统一错误 + gamedata 纯 schema/DTO + 数据加载（`Data` / 路径注入 / 校验）+ 零依赖纯函数工具（通用统计原语、CRN 种子表） | ✅ 已完成（配置层 `ai_config.toml` / `GameConfig` 归 P4′；CRN 只落 `seed_at`） |
 | **P2′** | `umasim` 基座：带行为的领域类型（uma / support_card / inherit / base，去剧本）+ 契约 trait（`Game` / `Trainer` / `TrainingValueSource`） | ✅ 已完成（剧本钩子 `ScenarioRules` / `ScenarioLifecycle` 经拍板延后到有具体剧本时，见 open_items #10；`simulator` 为旧仓空壳未移植） |
 | **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | ✅ 已完成（搜索评分为单轴口径，PT 偏好折算率归 `SearchConfig`；批量后端 / leaf 截断估值 / NN 样本导出延后，见 open_items #12–#14；`BasicGame` 接参考实现 + 随机训练员） |
 | **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | ✅ 已完成（P4a 配置层、P4b 前端契约与离线运行器、P4c 运气分与记录装配、P4d 协议通用段 / 终局帧 / 帧通道 / 帧驱动会话；记录落盘与入口层接线归后续阶段） |
@@ -240,7 +241,7 @@ miko_next/
 
 | 项 | 定稿 |
 |---|---|
-| 配置形态 | 默认值只存在于数据根 `default_config.toml`（唯一真源，Rust 侧不留同名字段缺省）；覆盖层与默认层同构、字段全可选，段缺失整段沿用；未知键严格报错。比赛等级表用具名预设按名选择（`presets.<kind>.<name>` + 字段填名字），剧本专属配置段不进本仓 |
+| 配置形态 | 默认值只存在于数据根 `ai_config.toml`（唯一真源，Rust 侧不留同名字段缺省）；覆盖层与默认层**同名**、放宿主目录（桌面＝当前目录），同构、字段全可选，段缺失整段沿用，存在才合并；未知键严格报错。比赛等级表用具名预设按名选择（`presets.<kind>.<name>` + 字段填名字），剧本专属配置段不进本仓 |
 | 决策上下文捕获 | DTO 归引擎（`umaai::decision`），训练员经可选接缝 `DecisionSource` 提供；不提供则只记动作，基础局照跑。不在计算层加同类 DTO |
 | 协议深度 | 完整档：`GameStatus` / `ScenarioProfile` 接缝 + 帧通道 + 通用 `baseGame` 解析 + 终局帧 + 基础局参考实现（放测试支撑）；**具体剧本段解析永远留剧本仓** |
 | 通道 | 各剧本统一走 `.portable` 下的回合帧 / 终局帧，路径与文件名作代码常量、保留根目录注入点，不做平台探测；实时监听用文件通知库，**测试必须带显式超时**（见 open_items #16） |
@@ -262,16 +263,38 @@ miko_next/
 | 选择器口径 | 入口只认基础局与契约参考训练员，**未知选择器报错并列出可用值**；剧本装配是剧本仓入口（装配 API 或 bin）的事 |
 | 默认马娘 | 默认配置改用**目标宽松**的马娘，使随机训练员也能跑满全部回合；测试夹具与默认层保持同值并加断言守门 |
 
-### 下游可用性改造（2026-10-17 立项，未开工）
+### 下游可用性改造（2026-10-17 立项）
 
-动机：下游只依赖引擎 crate（见 §3「下游接入与契约分层」），现状尚有平台绑定与数据源限制；先定形态与接缝，再补平台面（插在 P6′ 前后）。帧通道已解耦，剩余项按需开工。
+动机：下游只依赖引擎 crate（见 §3「下游接入与契约分层」），现状尚有平台绑定与数据源限制；先定形态与接缝，再补平台面（插在 P6′ 前后）。文件通道 / 并行 / 数据源三项已落地，跨目标守门待有 wasm / Android 消费方时开工。
 
 | 项 | 内容 | 状态 |
 |---|---|---|
 | 文件通道特性化 | 文件监听依赖只在文件通道使用 → 改成可选特性 `file-channel`（默认开）；关闭时下游经 `Session::step` 喂帧 | ✅ 已完成（帧形态常驻，监听与稳定读在特性下；特性按**传输类别**命名而不是按单个文件名，故不叫 `urafile`） |
-| 并行特性化 | 并行库只在搜索的批量 rollout 使用 → 改成可选特性（默认开），关闭时降级到**已有的串行分支** | 待开工 |
-| 数据源扩展 | `Data` / `Config` 从「路径注入」扩到「目录 / 内嵌 / 内存多源」，松开「根必是路径」的假设 | 待开工 |
+| 并行特性化 | 并行库只在搜索的批量 rollout 使用 → 改成可选特性（默认开），关闭时降级到**已有的串行分支** | ✅ 已完成（见下方定稿） |
+| 数据源扩展 | `Data` / `Config` 从「路径注入」扩到「目录 / 内嵌 / 内存多源」，松开「根必是路径」的假设 | ✅ 已完成（见下方定稿；配置按「不入来源」处理） |
 | 跨目标守门 | CI 增 `wasm32-unknown-unknown` 与 Android NDK 目标的编译检查，防平台绑定依赖回潮 | 待开工（暂无 wasm / Android 消费方） |
+
+#### 并行特性化定稿（2026-10-17 拍板）
+
+| 项 | 定稿 |
+|---|---|
+| 特性归属 | 实现在 `umasim`（唯一使用并行库的 crate）：`parallel = ["dep:rayon"]`，默认开；`umaai` 以 `default-features = false` 引 `umasim` 并**同名透传**，使引擎稳定面可整链剪掉 rayon |
+| 降级语义 | 并行开关取自本构建能力：未编入后端时 `with_parallel(true)` **降级为串行**（不报错、不改走别的路径）；能力查询 `umasim::search::parallel_supported()`，实例查询 `FlatSearch::is_parallel()` |
+| 代码形态 | 两处并行点收进 `search/par.rs` 的 `try_map_slice` / `map_range`，特性关闭时逐字退化为串行 `map`；收集顺序不变，故结果逐位一致 |
+| 承诺范围 | 只承诺**引擎稳定面**（`umasim` / `umaai`）的 `default-features = false` 形态；主线样例面（`umaai-cli` / `umaai-tools` / `umaai-tests`）不作承诺——成员间依赖边仍带默认特性，加了透传也是半生效 |
+| 守门 | CI 增两档：workspace 全默认特性关闭仍无 warning 编过；串行引擎（`-p umasim -p umaai --no-default-features`）跑测试并断言依赖图中不再有 rayon |
+
+#### 数据源扩展定稿（2026-10-17 拍板）
+
+| 项 | 定稿 |
+|---|---|
+| 抽象单元 | `DataSource` 只出两件事：`table<T: DeserializeOwned>(file)` 与 `key()`。**泛型方法而非返回 `Value` 的固定签名**——整表直解，目录源零额外开销，内存值源借用反序列化，`text_data_dict.json`（5.5 MB）不多一次全量解析与一份临时内存树 |
+| 数据形态 | 收 **JSON 值**（前端宿主直接给对象）与 **JSON 文本**（资产 / 网络响应 / `include_str!`）两种，由 `MemorySource::with_json` / `with_text` 两个构造点区分；不引入字节形态 |
+| 内置实现 | `DirSource`（数据根目录，`Data::load(root)` 是其便捷入口）与 `MemorySource`（宿主自备六项数据，缺项在取用时报错并指出缺哪一项）；宿主可自持实现 |
+| 幂等口径 | 幂等比对从「数据根路径」换成[来源标识](DataSource::key)：`Data::init(root)` / `Data::init_from(&src)`，标识不同即报错（不做热更，换数据需重启） |
+| 配置归属 | **配置不进数据来源**：`ai_config.toml` 是 TOML 文本，非路径宿主自带两份文本走 `Config::parse`。原计划写的「`Data` / `Config` 同扩」按「各管各的」收口，避免一个 trait 担两种形态 |
+| 多源叠加 | **不做叠加器**：本仓需要分层的只有配置一处（默认层 + 宿主覆盖层，已实现）；数据根是「一份完整数据集 + schema 版本门控」，叠一层即绕过门控，与可信轴冲突。宿主真需要「基线 + 补丁」时在自己的 `DataSource` 实现里先合并；将来若出现真实消费者再加 `Layered`，非破坏 |
+| 不引入第三方 | 评估过 `config`（config-rs）/ `figment` 这类多源分层 crate：它们按「合并后反序列化」工作、未知键默认忽略，换掉现有 ~100 行会把三条已测纪律（未知键严格报错 / 段缺失整段沿用 / 默认值唯一真源在文件里）一起丢掉，收益不足 |
 
 ---
 

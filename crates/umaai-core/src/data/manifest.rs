@@ -6,6 +6,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::source::{DataFile, DataSource, DirSource};
 use crate::{UmaError, UmaResult};
 
 /// 清单文件名
@@ -16,11 +17,11 @@ pub const SCHEMA_VERSION: u32 = 1;
 
 /// 程序必需的 5 张静态表（剧本数据不在此列）
 pub const REQUIRED_FILES: [&str; 5] = [
-    "umaDB.json",
-    "cardDB.json",
-    "text_data_dict.json",
-    "events.json",
-    "constants.json",
+    DataFile::Uma.name(),
+    DataFile::Card.name(),
+    DataFile::Text.name(),
+    DataFile::Events.name(),
+    DataFile::Constants.name(),
 ];
 
 /// 数据清单
@@ -33,24 +34,31 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    /// 读取清单并校验：版本一致、声明覆盖全部必需文件
+    /// 读取数据根下的清单并校验（目录来源的便捷入口）
+    ///
+    /// 其余来源（内存 / 内嵌）经 [`Data::from_source`](super::Data::from_source) 取清单后
+    /// 调 [`Self::check`]。
     pub fn load(root: &Path) -> UmaResult<Self> {
-        let path = root.join(MANIFEST_NAME);
-        let text = std::fs::read_to_string(&path).map_err(|source| UmaError::Io { path: path.clone(), source })?;
-        let m: Self = serde_json::from_str(&text).map_err(|source| UmaError::Parse { path: path.clone(), source })?;
-        if m.schema_version != SCHEMA_VERSION {
+        let m: Self = DirSource::new(root).table(DataFile::Manifest)?;
+        m.check()?;
+        Ok(m)
+    }
+
+    /// 校验：版本一致、声明覆盖全部必需文件
+    pub fn check(&self) -> UmaResult<()> {
+        if self.schema_version != SCHEMA_VERSION {
             return Err(UmaError::Validation {
                 target: format!("{MANIFEST_NAME}/schema_version"),
                 detail: format!(
                     "程序期望 {SCHEMA_VERSION}，数据为 {}（需更新数据或程序）",
-                    m.schema_version
+                    self.schema_version
                 ),
             });
         }
         let missing: Vec<&str> = REQUIRED_FILES
             .iter()
             .copied()
-            .filter(|f| !m.files.iter().any(|x| x == f))
+            .filter(|f| !self.files.iter().any(|x| x == f))
             .collect();
         if !missing.is_empty() {
             return Err(UmaError::Validation {
@@ -58,7 +66,7 @@ impl Manifest {
                 detail: format!("缺少必需文件: {}", missing.join(", ")),
             });
         }
-        Ok(m)
+        Ok(())
     }
 }
 

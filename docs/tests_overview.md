@@ -3,19 +3,19 @@
 本文件对照源码列出全部测试：按 crate 分节、按文件分小节、一行一条，便于定位用例与评估覆盖面。
 测试分层与判定口径的设计依据见 [`plan/miko_next_plan.md`](plan/miko_next_plan.md) 的「测试策略」节。
 
-口径（2026-10-17 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **212 passed / 0 failed / 3 ignored**；
-`cargo test --workspace --release -- --list` 共列出 **215 条**（214 个 `#[test]` + 1 个 doctest）。
+口径（2026-10-17 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **218 passed / 0 failed / 3 ignored**；
+`cargo test --workspace --release -- --list` 共列出 **221 条**（220 个 `#[test]` + 1 个 doctest）。
 
 | 层 | 位置 | 判定 | 条数 |
 |---|---|---|---|
-| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 179 |
-| L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 25 |
+| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 184 |
+| L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 26 |
 | L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 10 |
 | L4 baseline | `crates/umaai-tests/tests/baseline.rs` | 比对后返回 `Err` / 非零退出码 | 未落地 |
 | 文档示例 | doctest | 标记 `ignore`，不执行 | 1 |
-| **合计** | | | **215** |
+| **合计** | | | **221** |
 
-- 分 crate：`umaai-core` 59 · `umasim` 48 · `umaai` 68 · `umaai-cli` 30 · `umaai-tests` 10 · `umaai-tools` 0（骨架，暂无测试）。
+- 分 crate：`umaai-core` 62 · `umasim` 49 · `umaai` 69 · `umaai-cli` 31 · `umaai-tests` 10 · `umaai-tools` 0（骨架，暂无测试）。
 - 默认跳过 3 条（需手动跑 `--ignored`）：`channel_watches_real_writes`（真 watcher 写入链路）、`session_runs_on_real_channel`（真通道收局）、`define_terminal_record` 的 doctest（标记 `ignore`）。
 
 ## 运行方式
@@ -30,15 +30,19 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 - 所有 test / binary 一律 Release 编译（工具链见 `rust-toolchain.toml`，CI 口径见 `.github/workflows/ci.yml`）。
 - 引擎的文件通道是可选特性 `file-channel`（默认开）：`cargo check -p umaai --no-default-features` 验证「无文件监听依赖」的构建，此时帧形态测试与 `tests/channel.rs` 不编不跑（`umaai-tests` 以同名特性透传）。
+- 搜索的并行后端是可选特性 `parallel`（默认开，实现在 `umasim`、由 `umaai` 透传）：`cargo test -p umasim -p umaai --release --no-default-features` 跑**串行形态**（此时 rayon 不在依赖图中，`with_parallel(true)` 被降级为串行）；主线样例面（`umaai-cli` / `umaai-tools` / `umaai-tests`）始终带默认特性，不承诺该形态。
+- 配置两份、同名不同位：默认层 `<数据根>/ai_config.toml`、覆盖层 `<运行目录>/ai_config.toml`（存在才合并，无命令行开关）；CLI 用例因此要求运行目录（workspace 根）不得存在 ai_config.toml。
+- 静态数据来源两条：目录（`DirSource`，`Data::load(root)` 是其便捷入口）与内存（`MemorySource`，收 JSON 值或 JSON 文本）；`Data::from_source(&src)` 对任意来源通用，L2 用真实数据比对两条来源的载入结果。
 - 集成测试与端到端测试不用 `assert`：经 `Checker`（`umaai-tests`）或同语义的 `Checks`（`crates/umaai/tests/common/mod.rs`）逐条打印 `ok` / `FAIL`，结束时聚合失败项返回 `Err`；加 `--nocapture` 才能看到逐条输出。
 - 测试工作目录为 workspace 根；需要定位路径时用测试支撑提供的公共函数。
 - L4 baseline 尚未落地（位置与 `--update` 口径见方案 §6）。
 
 ## 目录
-- [umaai-core (59)](#umaai-core-59)
+- [umaai-core (62)](#umaai-core-62)
   - [`src/array.rs` (2)](#srcarrayrs-2)
   - [`src/crn.rs` (8)](#srccrnrs-8)
   - [`src/data/manifest.rs` (1)](#srcdatamanifestrs-1)
+  - [`src/data/source.rs` (2)](#srcdatasourcers-2)
   - [`src/diag.rs` (4)](#srcdiagrs-4)
   - [`src/error.rs` (2)](#srcerrorrs-2)
   - [`src/flags.rs` (4)](#srcflagsrs-4)
@@ -49,8 +53,8 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`src/race_mask.rs` (4)](#srcrace_maskrs-4)
   - [`src/rng.rs` (10)](#srcrngrs-10)
   - [`src/stats.rs` (7)](#srcstatsrs-7)
-  - [`tests/data_load.rs` (5)](#testsdata_loadrs-5)
-- [umasim (48)](#umasim-48)
+  - [`tests/data_load.rs` (6)](#testsdata_loadrs-6)
+- [umasim (49)](#umasim-49)
   - [`src/game/base/basic.rs` (5)](#srcgamebasebasicrs-5)
   - [`src/game/base/stage.rs` (2)](#srcgamebasestagers-2)
   - [`src/game/base/mod.rs` (7)](#srcgamebasemodrs-7)
@@ -61,11 +65,11 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`src/game/traits.rs` (1)](#srcgametraitsrs-1)
   - [`src/game/uma.rs` (6)](#srcgameumars-6)
   - [`src/search/config.rs` (2)](#srcsearchconfigrs-2)
-  - [`src/search/flat_search.rs` (12)](#srcsearchflat_searchrs-12)
+  - [`src/search/flat_search.rs` (13)](#srcsearchflat_searchrs-13)
   - [`src/search/result.rs` (3)](#srcsearchresultrs-3)
   - [`src/search/terminal.rs` (3)](#srcsearchterminalrs-3)
-- [umaai (68)](#umaai-68)
-  - [`src/config/mod.rs` (7)](#srcconfigmodrs-7)
+- [umaai (69)](#umaai-69)
+  - [`src/config/mod.rs` (8)](#srcconfigmodrs-8)
   - [`src/decision.rs` (4)](#srcdecisionrs-4)
   - [`src/luck.rs` (7)](#srcluckrs-7)
   - [`src/protocol/base.rs` (8)](#srcprotocolbasers-8)
@@ -78,14 +82,14 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`tests/luck.rs` (4)](#testsluckrs-4)
   - [`tests/protocol.rs` (6)](#testsprotocolrs-6)
   - [`tests/runner.rs` (3)](#testsrunnerrs-3)
-- [umaai-cli (30)](#umaai-cli-30)
+- [umaai-cli (31)](#umaai-cli-31)
   - [`src/render/term.rs` (5)](#srcrendertermrs-5)
   - [`src/render/style.rs` (4)](#srcrenderstylers-4)
   - [`src/render/explain.rs` (4)](#srcrenderexplainrs-4)
   - [`src/render/panel.rs` (4)](#srcrenderpanelrs-4)
   - [`src/render/table.rs` (3)](#srcrendertablers-3)
   - [`src/frontend.rs` (5)](#srcfrontendrs-5)
-  - [`src/cli.rs` (5)](#srcclirs-5)
+  - [`src/cli.rs` (6)](#srcclirs-6)
 - [umaai-tests (10)](#umaai-tests-10)
   - [`tests/basic_game.rs` (2)](#testsbasic_gamers-2)
   - [`tests/cli_smoke.rs` (3)](#testscli_smokers-3)
@@ -96,7 +100,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 ---
 
-## umaai-core (59)
+## umaai-core (62)
 
 本 crate 共 59 条测试，分两类：54 条内联单元测试（按源码文件分布，逐条 `assert` 判定随机流、DTO 与纯函数口径）；5 条集成测试（载入真实 `gamedata/`，逐条 `print` 观测后经 `Checker` 聚合，有失败才返回 `Err`）。
 关注点：随机派生与可复现性、数据 schema 与语义校验、位段与统计原语的边界口径。
@@ -127,6 +131,12 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 **清单校验**
 - `test_manifest_parse` — 清单可解析，必需文件缺失可被识别
+
+### `src/data/source.rs` (2)
+
+**数据来源**
+- `test_file_names` — 数据项到文件名的映射，以及目录来源的根目录与标识
+- `test_memory_source` — 内存来源的 JSON 文本与 JSON 值两条形态取到同一结果，缺项与坏文本报错并指出来源
 
 ### `src/diag.rs` (4)
 
@@ -219,18 +229,19 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_moments_matches_slice_stats` — 与切片式均值、标准差口径一致
 - `test_moments_degenerate` — 退化样本取中性值，全等样本不出 NaN
 
-### `tests/data_load.rs` (5)
+### `tests/data_load.rs` (6)
 
 **真实数据根**
 - `test_load_real_data` — 真实数据可载入，统计、访问器与掩码初始态符合预期
-- `test_init_idempotent` — 同根重复初始化返回同一实例，异根报错
+- `test_init_idempotent` — 同来源重复初始化返回同一实例，异来源（路径或标识）报错
+- `test_load_from_memory_source` — 真实数据的 JSON 文本与 JSON 值两条内存来源载入结果与目录来源一致，缺项来源报错
 - `test_load_missing_root` — 数据根缺失时载入即报错
 
 **校验与清单门控**
 - `test_validate_rejects_broken_data` — 破坏关键表后被语义校验拒绝
 - `test_manifest_version_gate` — 清单版本与程序不一致时载入被拒
 
-## umasim (48)
+## umasim (49)
 
 本 crate 共 48 条测试：47 条 `src/**` 内联单元测试（`#[cfg(test)] mod tests`，逐条 `assert` 判定）与 1 条文档示例。
 覆盖两个面：`game` 的规则数值口径（构造、继承、卡牌效果、状态位集、评分分量）与 `search` 的搜索契约（可复现、CRN 对齐、预算分配、入口守门）。
@@ -313,7 +324,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_defaults` — 默认配置锁定既有基线，改动即视为口径变更
 - `test_builders` — 各 builder 逐字段生效
 
-### `src/search/flat_search.rs` (12)
+### `src/search/flat_search.rs` (13)
 
 **可复现性与 CRN**
 - `test_search_reproducible` — 同种子两次搜索的中选下标与各候选统计逐项一致
@@ -326,6 +337,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_uniform_budget_and_probe` — 均匀分配下每候选恰好跑满预算，探针记录计划与成败
 - `test_ucb_budget_reproducible` — UCB 先保底一组再追加，跨过预算即停且同种子可复现
 - `test_parallel_matches_serial` — 并行与串行结果逐位一致，保序收集不改统计
+- `test_parallel_flag_follows_feature` — 并行开关取自本构建的后端能力，请求并行不得绕过特性缺失
 
 **守门与终局**
 - `test_strict_rollout` — 严格模式让 rollout 失败冒泡，默认只计数不中断
@@ -345,17 +357,18 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_no_terminal_is_zst` — 空终局记录与统计是零尺寸，不改变结果的尺寸
 - `define_terminal_record`（doctest，标记 `ignore` 不执行） — 文档示例：终局记录宏的剧本侧声明用法
 
-## umaai (68)
+## umaai (69)
 
 引擎 lib 的测试分两类：`src/**` 内联单元测试 48 条，用 `assert` 直查私有细节与纯函数；`tests/**` 集成测试 20 条，走真实数据根与真机帧夹具，经本地 `Checks` 逐条打印并聚合、失败返回 `Err`。
 关注面：配置解析的严格报错口径、运气分装配链、协议段解析与帧信道、决策基线取舍、Runner 端到端事件与可复现契约。
 
-### `src/config/mod.rs` (7)
+### `src/config/mod.rs` (8)
 
 - `test_parse_base` — 默认层完整配置可解析，字段与预设逐项核对
 - `test_missing_field_rejected` — 缺必填字段必须报错并指明字段名
 - `test_overlay_partial` — 覆盖层逐字段生效，未提及字段沿用默认层
 - `test_overlay_unknown_key_rejected` — 覆盖层拼错键必须报错，不静默忽略
+- `test_overlay_file_convention` — 约定覆盖层同名不同目录：存在才合并，缺席不报错
 - `test_preset_merge` — 预设按名合并，同名覆盖、异名保留
 - `test_preset_errors` — 预设缺名与非法等级表均报错，不静默兜底
 - `test_cards_validation` — 卡组重复与空卡组必须被拒
@@ -478,7 +491,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `runner_without_source` — 无决策源时照常跑满且无决策事件
 - `runner_reproducible` — 同配置两次运行终局与事件序列一致
 
-## umaai-cli (30)
+## umaai-cli (31)
 
 覆盖三层：终端呈现原语（宽度探测、语义着色、词元翻译、面板、表格）、样例前端 `PrintFrontend`、含参数解析的入口层。
 判定方式全是内联单元测试的 `assert`，逐条锁住对外可见的口径与退化行为。
@@ -546,7 +559,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 **终局块**
 - `test_final_block` — 终局块含评分档次、五维表与轴名
 
-### `src/cli.rs` (5)
+### `src/cli.rs` (6)
 
 **参数解析**
 - `test_parse_defaults` — 无参数时各项取默认值
@@ -556,6 +569,9 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 **用法与日志**
 - `test_help_prints_usage` — 帮助只打印用法、不跑对局
 - `test_init_logger_levels` — 级别名校验，重复初始化时新级别即时生效
+
+**选择器口径**
+- `test_unknown_selectors_rejected` — 未知剧本 / 训练员经文本配置构造后报错并列出可用值
 
 ## umaai-tests (10)
 
@@ -571,7 +587,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 ### `tests/cli_smoke.rs` (3)
 
 - `cli_full_game_smoke` — 验命令行装配链跑通一局、终局块成形且同参数输出逐字节一致
-- `cli_unknown_selector_rejected` — 守住入口严格口径：未知剧本、缺数据根、未知参数均报错不兜底
+- `cli_assembly_guards` — 守住入口：运行目录无覆盖层污染、缺数据根与未知参数均报错不兜底
 - `cli_verbosity_levels` — 验三档详细度各自成形：静默只留终局、详细到阶段
 
 ### `tests/runner_basic.rs` (1)

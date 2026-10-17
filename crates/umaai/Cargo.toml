@@ -5,12 +5,14 @@ edition.workspace = true
 
 [features]
 # 文件通道（目录监听 + 稳定读）：默认开启；下游自己喂帧时可关掉以去掉文件监听依赖
-default = ["file-channel"]
+default = ["file-channel", "parallel"]
 file-channel = ["dep:notify"]
+# 并行后端透传（实现在 umasim）：关闭即整链剪掉 rayon，供无线程平台的下游使用
+parallel = ["umasim/parallel"]
 
 [dependencies]
 umaai-core.workspace = true
-umasim.workspace = true
+umasim = { workspace = true, default-features = false }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

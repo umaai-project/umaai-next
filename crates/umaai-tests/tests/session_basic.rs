@@ -18,11 +18,13 @@ use rand::rngs::StdRng;
 #[cfg(feature = "file-channel")]
 use umaai::FileChannel;
 #[cfg(feature = "file-channel")]
+use umaai::RunStop;
+#[cfg(feature = "file-channel")]
 use umaai::protocol::channel::{FRAME_FINAL_SCORE, FRAME_THIS_TURN, plugin_dir};
 use umaai::protocol::story::{StoryChoice, StoryEffectValue};
 use umaai::{
     BaseParams, BaseStatus, Candidate, Config, DecisionRecord, DecisionSource, FinalScoreFrame, FrameKind, FrameRoute,
-    Frontend, GameStart, RawFrame, RunStart, RunStop, Session, StageCtx, StoryStatus, Summary,
+    Frontend, GameStart, RawFrame, RunStart, Session, StageCtx, StoryStatus, Summary,
 };
 use umaai_core::Data;
 use umaai_core::testing::data_root;

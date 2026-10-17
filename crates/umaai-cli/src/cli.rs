@@ -8,7 +8,7 @@
 //! 输出目标由调用方注入。
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Result, anyhow, bail};
@@ -24,6 +24,9 @@ use crate::render::term;
 /// 数据根的默认值（相对当前目录；发布形态的定位留打包阶段定）
 pub const DEFAULT_DATA_ROOT: &str = "gamedata";
 
+/// 覆盖层所在目录：约定为当前目录（覆盖层与默认层同名，靠目录区分角色）
+pub const CONFIG_DIR: &str = ".";
+
 /// 本仓 CLI 认识的无剧本基础局选择器
 const BASIC_SCENARIO: &str = "basic";
 /// 本仓 CLI 认识的契约参考训练员选择器
@@ -34,8 +37,6 @@ const RANDOM_TRAINER: &str = "random";
 pub struct Args {
     /// 数据根（只读输入）
     pub data_root: PathBuf,
-    /// 配置覆盖层文件（可选）
-    pub overlay: Option<PathBuf>,
     /// 呈现宽度（`None` = 探测终端，探测不到用回退值）
     pub width: Option<usize>,
     /// 输出详细度
@@ -50,7 +51,6 @@ impl Default for Args {
     fn default() -> Self {
         Self {
             data_root: PathBuf::from(DEFAULT_DATA_ROOT),
-            overlay: None,
             width: None,
             verbosity: Verbosity::default(),
             no_color: false,
@@ -68,13 +68,16 @@ impl Args {
 用法: umaai-cli [选项]
 
 选项:
-  --data-root <路径>  数据根（默认 gamedata，相对当前目录）
-  --overlay <路径>    配置覆盖层文件（与默认层同构、字段可选）
+  --data-root <路径>  数据根（默认 gamedata，相对当前目录；内含默认层配置）
   --width <列数>      呈现宽度（默认探测终端，探测不到用 100；最小 40）
   --quiet             只出终局块
   --verbose           出每阶段行与决策明细
   --no-color          关闭着色
   -h, --help          打印本用法
+
+配置:
+  默认层 = <数据根>/ai_config.toml（字段齐全）；要改配置就在**当前目录**放一份同名
+  ai_config.toml（覆盖层：同构、字段可选、段缺失整段沿用），存在才合并。
 
 说明:
   一局局数由入口固定为单局（批量统计归 umaai-tools）；剧本选择器只认 basic，
@@ -88,7 +91,6 @@ impl Args {
         while let Some(flag) = it.next() {
             match flag.as_str() {
                 "--data-root" => args.data_root = PathBuf::from(value(&mut it, "--data-root")?),
-                "--overlay" => args.overlay = Some(PathBuf::from(value(&mut it, "--overlay")?)),
                 "--width" => {
                     let raw = value(&mut it, "--width")?;
                     let cols: usize = raw.parse().map_err(|_| anyhow!("--width 需要正整数，收到 \"{raw}\""))?;
@@ -135,9 +137,17 @@ pub fn run_from_args(argv: &[String], out: &mut dyn Write) -> Result<()> {
 
 /// 按参数装配并跑完一局
 fn run(args: &Args, out: &mut dyn Write) -> Result<()> {
-    // 配置先于静态数据：配置是数据根下的文件，读取不经 `Data`
-    let cfg = Config::load_from_data_root(&args.data_root, args.overlay.as_deref())?;
+    // 配置先于静态数据：两份 ai_config.toml 都在数据加载之外（默认层在数据根、覆盖层在当前目录）
+    let cfg = Config::load_with_overlay_file(&args.data_root, CONFIG_DIR)?;
     init_logger(&cfg.output.log_level)?;
+    let overlay = Path::new(CONFIG_DIR).join(umaai::config::CONFIG_FILE);
+    if overlay.exists() {
+        log::info!(
+            "配置覆盖层: {}（默认层: {}）",
+            overlay.display(),
+            args.data_root.join(umaai::config::CONFIG_FILE).display()
+        );
+    }
     Data::init(&args.data_root)?;
     let consts = &Data::get()?.consts;
 
@@ -242,7 +252,7 @@ mod tests {
         let args = Args::parse(&argv(&[])).expect("默认参数应可解析");
         assert_eq!(args.data_root, PathBuf::from(DEFAULT_DATA_ROOT));
         assert_eq!(args.verbosity, Verbosity::Normal);
-        assert!(args.overlay.is_none() && args.width.is_none() && !args.no_color);
+        assert!(args.width.is_none() && !args.no_color);
     }
 
     /// 层1：逐项取值
@@ -251,15 +261,12 @@ mod tests {
         let args = Args::parse(&argv(&[
             "--data-root",
             "/tmp/d",
-            "--overlay",
-            "o.toml",
             "--width",
             "88",
             "--verbose",
             "--no-color",
         ]))?;
         assert_eq!(args.data_root, PathBuf::from("/tmp/d"));
-        assert_eq!(args.overlay, Some(PathBuf::from("o.toml")));
         assert_eq!(args.width, Some(88));
         assert_eq!(args.verbosity, Verbosity::Verbose);
         assert!(args.no_color);
@@ -290,6 +297,26 @@ mod tests {
         let text = String::from_utf8(out).expect("UTF-8");
         assert!(text.contains("umaai-cli"));
         assert!(text.contains("--data-root"));
+        Ok(())
+    }
+
+    /// 层1：选择器严格口径 —— 未知剧本 / 训练员报错并列出可用值，不静默兜底
+    ///
+    /// 覆盖层没有命令行注入缝（约定文件在运行目录），故这里用文本入口
+    /// [`Config::parse`] 构造坏配置，直接考 [`build_game`] / [`build_trainer`]。
+    #[test]
+    fn test_unknown_selectors_rejected() -> Result<()> {
+        let base = std::fs::read_to_string(umaai_core::testing::data_root()?.join(umaai::config::CONFIG_FILE))?;
+
+        let cfg = Config::parse(&base, Some("[sim]\nscenario = \"nope\"\n"))?;
+        let msg = format!("{:#}", build_game(&cfg).unwrap_err());
+        assert!(msg.contains("nope"), "错误里应出现写错的选择器: {msg}");
+        assert!(msg.contains(BASIC_SCENARIO), "错误里应列出可用选择器: {msg}");
+
+        let cfg = Config::parse(&base, Some("[sim]\ntrainer = \"nope\"\n"))?;
+        let msg = format!("{:#}", build_trainer(&cfg).unwrap_err());
+        assert!(msg.contains("nope"), "错误里应出现写错的训练员: {msg}");
+        assert!(msg.contains(RANDOM_TRAINER), "错误里应列出可用训练员: {msg}");
         Ok(())
     }
 

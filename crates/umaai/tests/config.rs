@@ -7,6 +7,7 @@ mod common;
 
 use anyhow::Result;
 use umaai::Config;
+use umaai::config::CONFIG_FILE;
 use umaai_core::testing::data_root;
 
 use crate::common::Checks;
@@ -42,7 +43,7 @@ fn config_load_default() -> Result<()> {
 #[test]
 fn config_has_no_scenario_segments() -> Result<()> {
     let mut c = Checks::new("配置无剧本段");
-    let text = std::fs::read_to_string(data_root()?.join("default_config.toml"))?;
+    let text = std::fs::read_to_string(data_root()?.join(CONFIG_FILE))?;
     for key in ["ramen", "onsen", "friend_complete_required", "collector"] {
         c.check(!text.contains(key), &format!("数据根默认配置不含 `{key}`"));
     }
@@ -56,7 +57,7 @@ fn config_overlay_merge() -> Result<()> {
     let mut c = Checks::new("配置覆盖层");
     let base = Config::load_from_data_root(data_root()?, None)?;
     let cfg = Config::parse(
-        &std::fs::read_to_string(data_root()?.join("default_config.toml"))?,
+        &std::fs::read_to_string(data_root()?.join(CONFIG_FILE))?,
         Some("[sim]\numa = 102601\nseed = 7\n\n[search]\npt_favor_rate = 1.0\n"),
     )?;
     c.check(cfg.sim.uma == 102601, "覆盖 uma 生效");
@@ -72,7 +73,7 @@ fn config_overlay_merge() -> Result<()> {
 #[test]
 fn config_error_paths() -> Result<()> {
     let mut c = Checks::new("配置错误路径");
-    let base_text = std::fs::read_to_string(data_root()?.join("default_config.toml"))?;
+    let base_text = std::fs::read_to_string(data_root()?.join(CONFIG_FILE))?;
 
     let bad_preset = base_text.replace("race_grades = \"standard\"", "race_grades = \"missing\"");
     let err = Config::parse(&bad_preset, None);
