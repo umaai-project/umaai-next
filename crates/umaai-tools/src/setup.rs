@@ -4,7 +4,7 @@
 //! 的[首候选训练员](FirstActionTrainer)（动作与事件选项都取第 0 个候选），同一输入
 //! 下根局面逐位一致。
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use umaai_core::gamedata::EventChoice;
@@ -33,25 +33,39 @@ pub(crate) struct NullFrontend;
 
 impl umaai::Frontend for NullFrontend {}
 
-/// 把局面推进到**首个训练决策点**，返回该局面与候选动作
+/// 把局面推进到**首个训练决策点**（回合 0），返回该局面与候选动作
+pub(crate) fn decision_root(game: BasicGame, seed: u64) -> Result<(BasicGame, Vec<BasicAction>)> {
+    decision_root_at(game, seed, 0)
+}
+
+/// 把局面推进到**指定回合**的训练决策点，返回该局面与候选动作
 ///
-/// 搜索与决策点探针的调用点都在这里（`Train` 阶段、人头分布已完成）：直接用初始局面
-/// 跑训练动作会读到尚未分配的人头分布，不是合法搜索根。推进过程本身消耗随机流，
-/// `seed` 决定推进路径。
-pub(crate) fn decision_root(mut game: BasicGame, seed: u64) -> Result<(BasicGame, Vec<BasicAction>)> {
+/// 搜索、决策点探针与分支对照的调用点都在这里（`Train` 阶段、人头分布已完成）：直接用
+/// 初始局面跑训练动作会读到尚未分配的人头分布，不是合法搜索根。推进过程本身消耗随机流，
+/// `seed` 决定推进路径；目标回合之前对局已结束即报错。
+pub(crate) fn decision_root_at(mut game: BasicGame, seed: u64, target: i32) -> Result<(BasicGame, Vec<BasicAction>)> {
+    ensure!(target >= 0, "探测回合坐标不得为负: {target}");
     let mut rng = StdRng::seed_from_u64(seed);
     let trainer = FirstActionTrainer;
-    for _ in 0..MAX_ADVANCE {
-        if game.stage == BasicStage::Train {
+    for _ in 0..max_advance(target) {
+        if game.turn() == target && game.stage == BasicStage::Train {
             let actions = game.list_actions()?;
             return Ok((game, actions));
         }
+        if game.turn() > target {
+            bail!("推进到回合 {target} 的训练决策点之前对局已结束");
+        }
         game.run_stage(&trainer, &mut rng)?;
         if !game.next() {
-            bail!("推进到训练决策点之前对局已结束");
+            bail!("推进到回合 {target} 的训练决策点之前对局已结束");
         }
     }
-    bail!("推进阶段超过 {MAX_ADVANCE} 步仍未抵达训练阶段")
+    bail!("推进到回合 {target} 的训练决策点超过 {MAX_ADVANCE} 步仍未抵达")
+}
+
+/// 推进到目标回合所需的最大步数（每回合至多 6 个阶段）
+fn max_advance(target: i32) -> usize {
+    (usize::try_from(target).unwrap_or(0) + 1) * 6 + MAX_ADVANCE
 }
 
 /// 用契约参考训练员的随机流推进一局到底（基线用例用）

@@ -6,6 +6,11 @@
 
 ## 2026-10-18
 
+### 仓内独立包（模板）会被根 workspace 认领
+
+- **坑**：在 workspace 目录内放一个独立包（空剧本模板），直接 `cargo check` 报 `current package believes it's in a workspace when it's not`——根清单会把它当成员路径去找，而模板自己没登记成员表。
+- **结论**：根 `Cargo.toml` 加 `exclude = ["templates"]`（模板另带 `[workspace]` 表，复制出仓后仍能独立构建）；CI 用 `cargo check --manifest-path templates/umaai-scenario/Cargo.toml` 单独守门，workspace 成员表保持 6 个 crate（验收条款）。
+
 ### 默认工作模式碰不到 cargo 的 registry cache
 
 - **坑**：默认工作模式（workspace-write）下 `~/.cargo` **只读**（实测 `touch` 报 `Read-only file system`），`cargo add` / `cargo fetch` / 需要重新解析依赖的 `cargo check` 走 registry 写路径即失败——报错像网络问题（代理连不上）或权限问题，实为同一件事；绕开（手改 `Cargo.toml`、搬 registry 缓存）会留下更难查的欠账。

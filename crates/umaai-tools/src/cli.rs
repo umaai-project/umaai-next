@@ -20,7 +20,7 @@ use umaai::Config;
 use umaai_core::Data;
 
 use crate::baseline::{self, Case, Difference};
-use crate::{batch, probe, report};
+use crate::{batch, compare, probe, report};
 
 /// 数据根默认值（相对当前目录；发布形态的定位留打包阶段定）
 pub const DEFAULT_DATA_ROOT: &str = "gamedata";
@@ -53,6 +53,11 @@ pub enum Cmd {
         only: Vec<String>,
         /// 重录期望值与元信息
         update: bool,
+    },
+    /// 分支推进对照（复盘用；计划自持）
+    Compare {
+        /// 对照计划 JSON 路径
+        plan: PathBuf,
     },
 }
 
@@ -92,6 +97,7 @@ impl Args {
   bench      固定种子批量跑局，输出评分分布与吞吐
   probe      固定根搜索成本探针（首个训练决策点）
   baseline   基线校验；--update 重录期望值与元信息
+  compare    分支推进对照（复盘：探测动作 vs 默认一选）
 
 公共选项:
   --data-root <路径>  数据根（默认 gamedata，相对当前目录；内含默认层配置）
@@ -110,7 +116,11 @@ probe 选项:
 baseline 选项:
   --dir <路径>        基线目录（默认 crates/umaai-tests/baselines）
   --only <名字>       只处理指定基线（可重复）
-  --update            重录（跑法不变，只刷新期望值与元信息）"
+  --update            重录（跑法不变，只刷新期望值与元信息）
+
+compare 选项:
+  --plan <路径>       对照计划 JSON（必给）：seed / turn / action / turns / note
+                      turn = 探测回合坐标，action = 该回合候选下标，turns = 观测回合数"
     }
 
     /// 解析参数（`argv` 含程序名，与 `std::env::args` 一致）
@@ -147,6 +157,7 @@ baseline 选项:
                         Long("dir") => raw.dir = Some(PathBuf::from(text(&mut parser, "--dir")?)),
                         Long("only") => raw.only.push(text(&mut parser, "--only")?),
                         Long("update") => raw.update = true,
+                        Long("plan") => raw.plan = Some(PathBuf::from(text(&mut parser, "--plan")?)),
                         other => return Err(bad_arg(other.unexpected())),
                     }
                 }
@@ -183,6 +194,8 @@ struct Raw {
     only: Vec<String>,
     /// 是否重录
     update: bool,
+    /// 对照计划路径
+    plan: Option<PathBuf>,
 }
 
 impl Raw {
@@ -213,6 +226,7 @@ impl Raw {
                     ("--dir", self.dir.is_some()),
                     ("--only", !self.only.is_empty()),
                     ("--update", self.update),
+                    ("--plan", self.plan.is_some()),
                 ]);
                 ensure!(bad.is_empty(), "bench 不认识 {}（用 -h 看用法）", bad.join(" / "));
                 Cmd::Bench {
@@ -226,6 +240,7 @@ impl Raw {
                     ("--dir", self.dir.is_some()),
                     ("--only", !self.only.is_empty()),
                     ("--update", self.update),
+                    ("--plan", self.plan.is_some()),
                 ]);
                 ensure!(bad.is_empty(), "probe 不认识 {}（用 -h 看用法）", bad.join(" / "));
                 Cmd::Probe {
@@ -238,6 +253,7 @@ impl Raw {
                     ("--runs", self.runs.is_some()),
                     ("--seed", self.seed.is_some()),
                     ("--search-n", self.search_n.is_some()),
+                    ("--plan", self.plan.is_some()),
                 ]);
                 ensure!(bad.is_empty(), "baseline 不认识 {}（用 -h 看用法）", bad.join(" / "));
                 Cmd::Baseline {
@@ -245,6 +261,21 @@ impl Raw {
                     only: self.only,
                     update: self.update,
                 }
+            }
+            "compare" => {
+                let bad = stray(&[
+                    ("--runs", self.runs.is_some()),
+                    ("--seed", self.seed.is_some()),
+                    ("--search-n", self.search_n.is_some()),
+                    ("--dir", self.dir.is_some()),
+                    ("--only", !self.only.is_empty()),
+                    ("--update", self.update),
+                ]);
+                ensure!(bad.is_empty(), "compare 不认识 {}（用 -h 看用法）", bad.join(" / "));
+                let Some(plan) = self.plan else {
+                    bail!("compare 需要 --plan <路径>（对照计划 JSON；用 -h 看用法）");
+                };
+                Cmd::Compare { plan }
             }
             other => bail!("未知子命令 \"{other}\"（用 -h 看用法）"),
         };
@@ -259,6 +290,7 @@ impl Raw {
             || self.dir.is_some()
             || !self.only.is_empty()
             || self.update
+            || self.plan.is_some()
     }
 }
 
@@ -310,6 +342,7 @@ pub fn run_from_args_with_host_dir(argv: &[String], out: &mut dyn Write, host_di
         Cmd::Bench { runs, seed } => run_bench(&args, width, runs, seed, host_dir, out),
         Cmd::Probe { seed, search_n } => run_probe(&args, width, seed, search_n, host_dir, out),
         Cmd::Baseline { dir, only, update } => run_baseline(&args, &dir, &only, update, host_dir, out),
+        Cmd::Compare { plan } => run_compare(&args, width, &plan, host_dir, out),
     }
 }
 
@@ -492,6 +525,105 @@ fn run_probe(
     Ok(())
 }
 
+/// `compare`：分支推进对照（复盘用）
+fn run_compare(args: &Args, width: usize, plan_path: &Path, host_dir: &Path, out: &mut dyn Write) -> Result<()> {
+    let cfg = setup(&args.data_root, host_dir)?;
+    let plan = compare::load_plan(plan_path)?;
+    let rep = compare::run(&cfg, &plan)?;
+
+    if !args.quiet {
+        writeln!(out, "{}", report::title("compare（分支推进对照）", width))?;
+        writeln!(
+            out,
+            "{}",
+            report::key_values(&[
+                ("对照计划".to_string(), plan_path.display().to_string()),
+                ("规则主种子".to_string(), rep.seed.to_string()),
+                ("探测回合".to_string(), rep.probe_turn.to_string()),
+                (
+                    "探测动作".to_string(),
+                    format!("[{}] {}", plan.action, rep.probe_action)
+                ),
+                ("默认一选".to_string(), format!("[0] {}", rep.default_action)),
+                ("探测回合数".to_string(), rep.planned_turns.to_string()),
+                (
+                    "实际观测".to_string(),
+                    format!("默认 {} 回合 / 探测 {} 回合", rep.default_turns, rep.probe_turns),
+                ),
+            ])
+        )?;
+        let candidates: Vec<Vec<String>> = rep
+            .candidates
+            .iter()
+            .enumerate()
+            .map(|(i, name)| vec![i.to_string(), name.clone()])
+            .collect();
+        writeln!(
+            out,
+            "{}",
+            report::table_block(&["下标", "探测回合候选"], &candidates, width)
+        )?;
+        let rows: Vec<Vec<String>> = rep
+            .rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.turn.to_string(),
+                    r.default.score.to_string(),
+                    r.probe.score.to_string(),
+                    r.score_delta().to_string(),
+                    r.default.pt.to_string(),
+                    r.probe.pt.to_string(),
+                    r.pt_delta().to_string(),
+                    r.five_delta().to_string(),
+                ]
+            })
+            .collect();
+        writeln!(
+            out,
+            "{}",
+            report::table_block(
+                &[
+                    "回合",
+                    "默认评分",
+                    "探测评分",
+                    "Δ评分",
+                    "默认PT",
+                    "探测PT",
+                    "ΔPT",
+                    "Δ五维"
+                ],
+                &rows,
+                width
+            )
+        )?;
+    }
+
+    let mut fields: Vec<(&str, String)> = vec![
+        ("seed", rep.seed.to_string()),
+        ("probe_turn", rep.probe_turn.to_string()),
+        ("turns", rep.planned_turns.to_string()),
+        ("a_turns", rep.default_turns.to_string()),
+        ("b_turns", rep.probe_turns.to_string()),
+        ("a_action", report::token(&rep.default_action)),
+        ("b_action", report::token(&rep.probe_action)),
+    ];
+    if let Some(row) = rep.last() {
+        fields.push(("last_turn", row.turn.to_string()));
+        fields.push(("a_score", row.default.score.to_string()));
+        fields.push(("b_score", row.probe.score.to_string()));
+        fields.push(("d_score", row.score_delta().to_string()));
+        fields.push(("a_pt", row.default.pt.to_string()));
+        fields.push(("b_pt", row.probe.pt.to_string()));
+        fields.push(("d_pt", row.pt_delta().to_string()));
+        fields.push(("a_five", compare::join_five(&row.default.five)));
+        fields.push(("b_five", compare::join_five(&row.probe.five)));
+    }
+    writeln!(out, "{}", report::machine_line("COMPARE", &fields))?;
+    out.flush()?;
+    Ok(())
+}
+
 /// `baseline`：校验或重录
 fn run_baseline(
     args: &Args,
@@ -643,6 +775,14 @@ mod tests {
                 update: true,
             })
         );
+
+        let args = Args::parse(&argv(&["compare", "--plan", "plan.json"]))?;
+        assert_eq!(
+            args.cmd,
+            Some(Cmd::Compare {
+                plan: PathBuf::from("plan.json"),
+            })
+        );
         Ok(())
     }
 
@@ -677,6 +817,9 @@ mod tests {
             vec!["baseline", "--runs", "1"],
             vec!["baseline", "--seed", "1"],
             vec!["baseline", "--update", "--nope"],
+            vec!["bench", "--plan", "x"],
+            vec!["compare", "--runs", "1"],
+            vec!["compare"],
             vec!["--quiet"],
             vec!["--data-root", "/tmp/d"],
             vec!["bench", "--runs"],

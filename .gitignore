@@ -2,3 +2,5 @@
 logs/
 __pycache__/
 *.pyc
+# 空剧本仓模板是独立包，自己的构建目录不进仓（Cargo.lock 保留，CI 可复现）
+templates/**/target/

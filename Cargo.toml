@@ -8,6 +8,9 @@ members = [
     "crates/umaai-tools",
     "crates/umaai-tests",
 ]
+# 空剧本仓模板不进 workspace（验收条款「workspace 仅含 6 个 crate」）；
+# 它是独立包，用 `cargo check --manifest-path templates/umaai-scenario/Cargo.toml` 单独守门
+exclude = ["templates"]
 
 [workspace.package]
 version = "0.1.0"

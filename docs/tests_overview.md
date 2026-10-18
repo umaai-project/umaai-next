@@ -3,19 +3,19 @@
 本文件对照源码列出全部测试：按 crate 分节、按文件分小节、一行一条，便于定位用例与评估覆盖面。
 测试分层与判定口径的设计依据见 [`plan/miko_next_plan.md`](plan/miko_next_plan.md) 的「测试策略」节。
 
-口径（2026-10-18 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **252 passed / 0 failed / 3 ignored**；
-`cargo test --workspace --release -- --list` 共列出 **255 条**（254 个 `#[test]` + 1 个 doctest）。
+口径（2026-10-18 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **256 passed / 0 failed / 3 ignored**；
+`cargo test --workspace --release -- --list` 共列出 **259 条**（258 个 `#[test]` + 1 个 doctest）。
 
 | 层 | 位置 | 判定 | 条数 |
 |---|---|---|---|
-| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 211 |
+| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 214 |
 | L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 26 |
-| L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 16 |
+| L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 17 |
 | L4 baseline | `crates/umaai-tests/tests/baseline.rs` + `crates/umaai-tests/baselines/*.json` | 比对后返回 `Err` / 非零退出码 | 1 |
 | 文档示例 | doctest | 标记 `ignore`，不执行 | 1 |
-| **合计** | | | **255** |
+| **合计** | | | **259** |
 
-- 分 crate：`umaai-core` 59 · `umasim` 53 · `umaai` 69 · `umaai-cli` 31 · `umaai-tools` 26 · `umaai-tests` 17。
+- 分 crate：`umaai-core` 59 · `umasim` 53 · `umaai` 69 · `umaai-cli` 31 · `umaai-tools` 29 · `umaai-tests` 18。
 - 默认跳过 3 条（需手动跑 `--ignored`）：`channel_watches_real_writes`（真 watcher 写入链路）、`session_runs_on_real_channel`（真通道收局）、`define_terminal_record` 的 doctest（标记 `ignore`）。
 
 ## 运行方式
@@ -31,11 +31,12 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - 所有 test / binary 一律 Release 编译（工具链见 `rust-toolchain.toml`，CI 口径见 `.github/workflows/ci.yml`）。
 - 引擎的文件通道是可选特性 `file-channel`（默认开）：`cargo check -p umaai --no-default-features` 验证「无文件监听依赖」的构建，此时帧形态测试与 `tests/channel.rs` 不编不跑（`umaai-tests` 以同名特性透传）。
 - 搜索的并行后端是可选特性 `parallel`（默认开，实现在 `umasim`、由 `umaai` 透传）：`cargo test -p umasim -p umaai --release --no-default-features` 跑**串行形态**（此时 rayon 不在依赖图中，`with_parallel(true)` 被降级为串行）；主线样例面（`umaai-cli` / `umaai-tools` / `umaai-tests`）始终带默认特性，不承诺该形态。
-- 配置两份、同名不同位：默认层 `<数据根>/ai_config.toml`、覆盖层 `<运行目录>/ai_config.toml`（存在才合并，无命令行开关）；CLI 用例因此要求运行目录（workspace 根）不得存在 ai_config.toml。
+- 配置两份、同名不同位：默认层 `<数据根>/ai_config.toml`、覆盖层 `<宿主目录>/ai_config.toml`（存在才合并，无命令行开关）；**宿主目录可由入口注入**（默认当前目录），CLI / 工具用例注入临时目录，另保留「运行目录（workspace 根）不得存在 ai_config.toml」的守门断言。
 - 静态数据来源两条：目录（`DirSource`，`Data::load(root)` 是其便捷入口）与内存（`MemorySource`，收 JSON 值或 JSON 文本）；`Data::from_source(&src)` 对任意来源通用，L2 用真实数据比对两条来源的载入结果。
 - 集成测试与端到端测试不用 `assert`：经 `Checker`（`umaai-tests`）或同语义的 `Checks`（`crates/umaai/tests/common/mod.rs`）逐条打印 `ok` / `FAIL`，结束时聚合失败项返回 `Err`；加 `--nocapture` 才能看到逐条输出。
 - 测试工作目录为 workspace 根；需要定位路径时用测试支撑提供的公共函数。
 - L4 baseline 已落地：基线数据在 `crates/umaai-tests/baselines/*.json`（一基线一 JSON），判定在 `crates/umaai-tests/tests/baseline.rs`（含「改动一项期望即变红」的反自证守门）；重录：`cargo run --release -p umaai-tools --bin umaai-tools -- baseline --update`，单独校验：同名命令去掉 `--update`（可用 `--only <基线名>` 收窄）。
+- 空剧本仓模板是**独立包**（不在 workspace 成员表内）：`cargo check --manifest-path templates/umaai-scenario/Cargo.toml --all-targets`（CI 单独一步，守验收条款「不改引擎一行即可编过」）；模板自身不设测试，接入纪律见 `docs/scenario/`。
 
 ## 目录
 - [umaai-core (59)](#umaai-core-59)
@@ -90,13 +91,14 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`src/render/table.rs` (3)](#srcrendertablers-3)
   - [`src/frontend.rs` (5)](#srcfrontendrs-5)
   - [`src/cli.rs` (6)](#srcclirs-6)
-- [umaai-tools (26)](#umaai-tools-26)
+- [umaai-tools (29)](#umaai-tools-29)
   - [`src/baseline.rs` (9)](#srcbaseliners-9)
   - [`src/batch.rs` (5)](#srcbatchrs-5)
   - [`src/cli.rs` (7)](#srcclirs-7)
+  - [`src/compare.rs` (3)](#srccomparers-3)
   - [`src/probe.rs` (1)](#srcprobers-1)
   - [`src/report.rs` (4)](#srcreportrs-4)
-- [umaai-tests (16)](#umaai-tests-16)
+- [umaai-tests (18)](#umaai-tests-18)
   - [`tests/basic_game.rs` (2)](#testsbasic_gamers-2)
   - [`tests/baseline.rs` (1)](#testsbaseliners-1)
   - [`tests/cli_smoke.rs` (4)](#testscli_smokers-4)
@@ -105,7 +107,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`tests/search_smoke.rs` (1)](#testssearch_smokers-1)
   - [`tests/session_basic.rs` (2)](#testssession_basicrs-2)
   - [`tests/smoke.rs` (1)](#testssmokers-1)
-  - [`tests/tools_smoke.rs` (2)](#teststools_smokers-2)
+  - [`tests/tools_smoke.rs` (3)](#teststools_smokers-3)
 
 ---
 
@@ -583,9 +585,9 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 **选择器口径**
 - `test_unknown_selectors_rejected` — 未知剧本 / 训练员经文本配置构造后报错并列出可用值
 
-## umaai-tools (26)
+## umaai-tools (29)
 
-本 crate 是开发工具件（跑批 / 探针 / 基线），测试全部为内联单元测试：口径与边界用 `assert` 守门，跑局与搜索的端到端冒烟在 `umaai-tests/tests/tools_smoke.rs`。
+本 crate 是开发工具件（跑批 / 探针 / 基线 / 对照），测试全部为内联单元测试：口径与边界用 `assert` 守门，跑局与搜索的端到端冒烟在 `umaai-tests/tests/tools_smoke.rs`。
 集成测试不放本 crate（工具件依赖 `umaai-cli`，而 `umaai-tests` 反向依赖本 crate，端到端统一放测试 crate 一侧，避免依赖边打结）。
 
 ### `src/baseline.rs` (9)
@@ -623,6 +625,12 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_help_prints_usage` — 帮助只打用法、不跑任何子命令
 - `test_join_and_token` — 五维用逗号连接，机读行的值内不出现空白
 
+### `src/compare.rs` (3)
+
+- `test_plan_validate` — 计划自检：负回合坐标与零回合直接拒绝
+- `test_plan_serde_strict` — 计划 JSON 严格解析：拼错键与缺字段都报错，可选字段有缺省
+- `test_row_deltas` — 对照行差值按「探测 − 默认」计算（评分 / PT / 五维和）
+
 ### `src/probe.rs` (1)
 
 - `test_totals` — 探针总数由逐候选求和，成功 + 失败等于计划数
@@ -634,7 +642,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_machine_line_is_splittable` — 切分后每段都是 `key=value`
 - `test_table_block_respects_width` — 表格宽度由调用方给出，窄宽度不产生超宽行
 
-## umaai-tests (16)
+## umaai-tests (18)
 
 本 crate 是跨 crate 集成与端到端测试的所在地，覆盖引擎编排、CLI 装配、会话协议、搜索、随机流分层与工具链六条链路。
 集成测试不用 `assert`，统一经 `umaai-tests/src/lib.rs` 的 `Checker` 逐条打印 `ok` / `FAIL`、聚合失败项后返回 `Err`，保证 `cargo test` 有失败信号。
@@ -679,10 +687,11 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 - `smoke` — 确认测试 crate 与工作区装配可用，输出冒烟标记即过
 
-### `tests/tools_smoke.rs` (2)
+### `tests/tools_smoke.rs` (3)
 
 - `test_batch_and_probe` — 验跑批的逐局一致性与分布口径、探针的预算与候选对齐、同参数两次逐位一致
 - `test_entry_layer` — 验工具入口的子命令分发、机读行形状与基线校验路径（含未知子命令报错、注入宿主目录的坏覆盖层入口即报错）
+- `test_compare` — 验分支对照的机读行与逐回合表、同参数两次逐位一致，探测动作越界与零回合计划都报错
 
 ## 维护约定
 

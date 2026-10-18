@@ -62,9 +62,12 @@ miko_next/
 │  ├─ umaai-cli/    # print 前端 + 入口层功能（更新等）
 │  ├─ umaai-tools/  # 探针 / 基准（publish = false）
 │  └─ umaai-tests/  # 集成 / 端到端 / baseline（publish = false）
+├─ templates/         # 空剧本仓模板（独立包，不进 workspace；CI 单独 check）
+│  └─ umaai-scenario/
 ├─ docs/
 │  ├─ plan/         # 方案（含 v1 参考）
 │  ├─ game/         # 游戏机制：规则 / 实现细节 / 术语 / 固有效果
+│  ├─ scenario/     # 剧本仓接入指南与契约参考
 │  ├─ notes/        # 开发笔记、待办
 │  ├─ changelog.md
 │  └─ issues.md
@@ -238,8 +241,8 @@ miko_next/
 | **P6b′** | baseline 框架：一基线一 JSON + 判定壳 + 重录入口 | ✅ 已完成（位置 `crates/umaai-tests/baselines/`；判定 `crates/umaai-tests/tests/baseline.rs`，重录 `umaai-tools baseline --update`） |
 | **P6c′** | 数据 / 程序更新器（入口层 `update`） | —（**拆出为独立阶段**：分发源、包格式与交互形态待拍板，旧仓无可移植实现） |
 | **P6e′** | 随机流分层升格为通用机制：决策流 / 局面流 / 事件流分开，剧本轴留剧本；删外挂 CRN | ✅ 已完成（core 已有原语接进计算层；守门用例见下方 P6e′ 执行定稿） |
-| **P6d′** | `umaai-tools` 分支推进对照（复盘用：同根两分支推进 n 回合比差别） | —（待开工；口径依赖 P6e′，见下方 P6e′ 定稿的「后续」） |
-| **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | — |
+| **P6d′** | `umaai-tools` 分支推进对照（复盘用：同根两分支推进 n 回合比差别） | ✅ 已完成（`umaai-tools compare`：JSON 对照计划 + 单探测动作 vs 默认一选；见下方 P6d′ 执行定稿） |
+| **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | ✅ 已完成（模板 `templates/umaai-scenario/`〔独立包，CI 单独 check〕；文档 `docs/scenario/`；见下方 P7′ 执行定稿） |
 
 ### P4′ 执行定稿（2026-10-17 拍板）
 
@@ -296,6 +299,29 @@ miko_next/
 | 昂贵之处 | 分流是**语义升级**：同种子数值整体位移（属预期），三份基线全部重录——这正是 L4 基线存在的意义 |
 | 后续 | P6d′（同根分支推进对照）排在 P6e′ 之后：配对由每回合派生天然保证，工具不再需要"按阶段重播种"选项 |
 
+### P6d′ 执行定稿（2026-10-18 拍板）
+
+| 项 | 定稿 |
+|---|---|
+| 入口 | `umaai-tools compare`（单 bin 多子命令，与 `bench` / `probe` / `baseline` 并列）；`--quiet` 只出机读行 |
+| 输入 | **对照计划 JSON**（`--plan <路径>`，必给）：`seed`（可选，缺省取配置 `sim.seed`）/ `turn`（探测回合坐标）/ `action`（该回合候选下标）/ `turns`（探测回合数 ≥ 1）/ `note`（可选）；`deny_unknown_fields` 严格解析，零回合与负坐标在入口自检报错 |
+| 口径 | **同根两分支**：装配 → 注入主种子 → 用确定性首候选推进到探测回合的训练决策点 → 克隆两支；**默认支**全程首候选，**探测支**只在探测回合改取探测动作；规则随机按 `(master, 回合)` 派生，故同回合随机输入一致，差异只来自这一个动作 |
+| 观测 | 逐回合（含探测回合）：回合 / 动作 / 评分 / PT / 五维；输出 A/B/Δ 表 + 探测回合候选表 + 汇总机读行 `COMPARE …`（末回合两支数值与差值） |
+| 守门 | 同参数两次逐位一致；探测动作越界点名候选数报错；计划自检（零回合 / 负坐标）报错；**不入 L4 基线**（属复盘编排面），由工具冒烟用例守门 |
+| 不做 | 多探测点 / 动作序列文件 / 记录落盘 / CSV 与图表（等真实消费者） |
+
+### P7′ 执行定稿（2026-10-18 拍板）
+
+| 项 | 定稿 |
+|---|---|
+| 模板落位 | 本仓 `templates/umaai-scenario/`（**独立包**，根 workspace `exclude`，维持验收条款「workspace 仅含 6 个 crate」）；CI 增一步 `cargo check` + `clippy -D warnings --manifest-path` |
+| 模板内容 | 最小可编译剧本：局面（`ScenarioGame` 包 `BaseGame` + 自持阶段机 + 策略流）、动作（`Action`）、人头（复用 `BasePerson`）、`Game` 22 必备项、`FlatSearchGame` 接入、`ScenarioView` 占位、`build_game` 装配 API、仓根瘦 bin（复用 `umaai-cli` 呈现件） |
+| 依赖写法 | 开发期 `path` / 稳定期 git `tag` / 下游 `default-features = false` 三档写进模板 README；模板自带 `[workspace]` 表以便独立构建 |
+| 文档 | 新增 `docs/scenario/`：`README.md`（接入指南：建仓 / 依赖 / 数据与配置注入 / 五条纪律 / 验收 / 常见坑）+ `contracts.md`（契约逐项清单：`Game` 22 必备与默认提供项 / `Person` / `ActionEnum` / `Trainer` / `FlatSearchGame` / `Frontend` / 装配入口 / `StageId` 与规则流 / View DTO）；术语并入 `docs/game/glossary.md` |
+| View DTO | 形态 A 细节定稿：**值快照**（owned、`Clone`）+ 序列化由剧本 `serde` 提供 + `non_exhaustive` + 单一取数口；open_items #20 据此收口 |
+| 验收 | 模板 `cargo check` / `clippy -D warnings` 通过（本地 + CI）；模板可跑一局冒烟；「接入新剧本时引擎 `git diff` 为空」写进接入纪律 |
+| 不做 | 真实剧本数值 / 策略；剧本特化呈现（仍等真实剧本落地定形，open_items #18 顺延）；模板仓独立 git 仓（目录层级等首个真实剧本归纳） |
+
 ### 下游可用性改造（2026-10-17 立项）
 
 动机：下游只依赖引擎 crate（见 §3「下游接入与契约分层」），现状尚有平台绑定与数据源限制；先定形态与接缝，再补平台面（插在 P6′ 前后）。文件通道 / 并行 / 数据源三项已落地，跨目标守门待有 wasm / Android 消费方时开工。
@@ -340,7 +366,7 @@ miko_next/
 - `BasicGame` 固定种子可复现并跑完全部回合
 - baseline 可回归、`--update` 可回写
 - 核心枚举 `non_exhaustive`、serde 默认值齐全，新增钩子均带默认实现
-- 空剧本模板可在不改引擎前提下 `cargo check` 通过
+- 空剧本模板（`templates/umaai-scenario/`，独立包）可在不改引擎前提下 `cargo check` / `clippy -D warnings` 通过（CI 单独一步守门）
 - `src` 无超长文件（内联测试只留私有细节）
 
 ---

@@ -216,3 +216,104 @@ fn test_entry_layer() -> Result<()> {
 
     checker.finish()
 }
+
+#[test]
+fn test_compare() -> Result<()> {
+    let host = host_dir("tools-compare-host")?;
+    let root = data_root()?;
+    let mut checker = Checker::new("umaai-tools 分支推进对照");
+
+    // 对照计划：探测回合 5、探测动作 1、观测 3 回合（自持 JSON，与入口同一条链）
+    let plan = host.join("plan.json");
+    std::fs::write(
+        &plan,
+        r#"{"seed": 42, "turn": 5, "action": 1, "turns": 3, "note": "冒烟"}"#,
+    )?;
+
+    let run_once = |out: &mut Vec<u8>| -> Result<()> {
+        cli::run_from_args_with_host_dir(
+            &argv(&[
+                "compare".to_string(),
+                "--plan".to_string(),
+                plan.display().to_string(),
+                "--data-root".to_string(),
+                root.display().to_string(),
+            ]),
+            out,
+            &host,
+        )
+    };
+
+    let mut out = Vec::new();
+    run_once(&mut out)?;
+    let text = String::from_utf8(out).context("输出应为 UTF-8")?;
+    println!("--- compare 输出（尾部 12 行）---");
+    for line in text.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev() {
+        println!("{line}");
+    }
+    let machine = text
+        .lines()
+        .find(|line| line.starts_with("COMPARE "))
+        .unwrap_or_default()
+        .to_string();
+    checker.check(!machine.is_empty(), "出 COMPARE 机读行");
+    checker.check(
+        machine.contains("probe_turn=5") && machine.contains("turns=3"),
+        "机读行带探测坐标与回合数",
+    );
+    checker.check(
+        machine.contains("a_action=") && machine.contains("b_action="),
+        "机读行带两支动作",
+    );
+    checker.check(
+        machine.contains("a_turns=3") && machine.contains("b_turns=3"),
+        "两支观测回合数一致",
+    );
+    checker.check(text.contains("Δ评分"), "人读表带差值列");
+
+    // 同参数两次必须逐位一致（工具本身要可复现）
+    let mut again = Vec::new();
+    run_once(&mut again)?;
+    checker.check(String::from_utf8_lossy(&again) == text, "同参数两次逐位一致");
+
+    // 探测动作越界：点名候选数即报错
+    let bad_action = host.join("bad_action.json");
+    std::fs::write(&bad_action, r#"{"turn": 5, "action": 99, "turns": 3}"#)?;
+    let err = cli::run_from_args_with_host_dir(
+        &argv(&[
+            "compare".to_string(),
+            "--plan".to_string(),
+            bad_action.display().to_string(),
+            "--data-root".to_string(),
+            root.display().to_string(),
+        ]),
+        &mut Vec::new(),
+        &host,
+    );
+    let msg = err.as_ref().map_or_else(|e| format!("{e:#}"), |_| String::new());
+    checker.check(
+        err.is_err() && msg.contains("越界"),
+        &format!("探测动作越界报错: {msg}"),
+    );
+
+    // 计划自检：零回合直接拒绝
+    let bad_plan = host.join("bad_plan.json");
+    std::fs::write(&bad_plan, r#"{"turn": 5, "action": 1, "turns": 0}"#)?;
+    checker.check(
+        cli::run_from_args_with_host_dir(
+            &argv(&[
+                "compare".to_string(),
+                "--plan".to_string(),
+                bad_plan.display().to_string(),
+                "--data-root".to_string(),
+                root.display().to_string(),
+            ]),
+            &mut Vec::new(),
+            &host,
+        )
+        .is_err(),
+        "零回合计划报错",
+    );
+
+    checker.finish()
+}
