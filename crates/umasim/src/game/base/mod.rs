@@ -11,11 +11,12 @@ pub mod stage;
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use hashbrown::{HashMap, HashSet};
 use rand::Rng;
 use rand::seq::IndexedRandom;
 use umaai_core::gamedata::{ActionValue, EventChoice, EventData, TriggerType};
+use umaai_core::rng::{EventRng, StreamTag, TurnFixedRng, derive_seed};
 use umaai_core::{Array5, AttributeArray, Data, split_status};
 
 pub use action::*;
@@ -23,6 +24,19 @@ pub use person::*;
 pub use stage::BasicStage;
 
 use crate::game::{FriendOutState, FriendState, InheritInfo, SupportCard, Uma};
+
+/// 一次推进用的**引擎侧随机流**（两条轴）
+///
+/// 决策流不在这里：它由调用方以 `&mut StdRng` 传进 `run_stage`，**只给 `Trainer`**。
+/// 剧本自己的机制随机（如脚本专属的动作结算）也不在这里——那条轴由具体剧本自持，
+/// 从 [`BaseGame::master`] 取主种子自派生即可。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuleStreams {
+    /// 回合固定流：人头分布 / 角标 / hint / 回合固定事件
+    pub turn_fixed: TurnFixedRng,
+    /// 事件流：回合开始事件链（解锁判定 / 事件生成 / 事件结果）
+    pub event: EventRng,
+}
 
 /// 一局游戏的基本状态，剧本通用，用于计算，不用于通信（例如通信只传递卡组id）
 ///
@@ -55,9 +69,77 @@ pub struct BaseGame {
     pub friend_event_ids: HashSet<u32>,
     /// 比赛等级表（回合 → 等级），归配置层，由构造方注入
     pub race_grades: Arc<Vec<i32>>,
+    /// 规则主种子；未注入时规则流不可用（推进入口据此**报错**，不静默回退单流）
+    rule_master: Option<u64>,
+    /// 回合固定流（按 `(master, turn)` 派生）
+    turn_fixed: Option<TurnFixedRng>,
+    /// 事件流（按 `(master, turn, EVENT_TAG)` 派生）
+    event: Option<EventRng>,
 }
 
 impl BaseGame {
+    /// 规则主种子；未注入时为 `None`（推进入口据此明确报错）
+    ///
+    /// 名字与契约的 `Game::rule_master` 分开：具体局面经 `Deref` 指向本类型，同名方法会在
+    /// 漏导入 contract 的调用点被静默解析到这里。
+    pub fn master(&self) -> Option<u64> {
+        self.rule_master
+    }
+
+    /// 装主种子并按当前回合派生两条规则流（一步做完，不留「只装种子不派生」的空档）
+    ///
+    /// 契约入口是 `Game::set_rule_master`（宿主与搜索分支的注入点），具体局面的实现里调
+    /// 本方法完成引擎侧那一步；之后**每进入一个回合**都要 [`Self::reset_rule_streams`]。
+    /// 两个名字刻意不同：具体局面经 `Deref` 指向本类型，同名方法会在漏导入 contract 的
+    /// 调用点被静默解析到这里、绕过剧本自己那条轴。
+    pub fn init_rule_streams(&mut self, master: u64) {
+        self.rule_master = Some(master);
+        self.reset_rule_streams();
+    }
+
+    /// 按 `(master, turn)` 重新派生两条规则流（回合边界调用）
+    ///
+    /// 派生形如 `derive_seed(master, [turn])` / `derive_seed(master, [turn, EVENT_TAG])`：
+    /// 同一种子、同一回合，**任何策略**看到的局面与事件随机逐位相同——这既是 CRN 配对
+    /// 的基础，也让"改上游随机"不再位移本回合的其他随机点。未注入主种子时清空两条流。
+    pub fn reset_rule_streams(&mut self) {
+        match self.rule_master {
+            Some(master) => {
+                let turn = self.turn as u64;
+                self.turn_fixed = Some(TurnFixedRng::new(derive_seed(master, &[turn])));
+                self.event = Some(EventRng::new(derive_seed(master, &[turn, StreamTag::Event.tag()])));
+            }
+            None => {
+                self.turn_fixed = None;
+                self.event = None;
+            }
+        }
+    }
+
+    /// 取出两条规则流独占使用（推进期间）；与 [`Self::put_rule_streams`] 成对
+    ///
+    /// 主种子未注入时**报错**（不静默回退到决策流：那种"看起来能跑"的回退会把两套随机
+    /// 语义混在一起，且只在参数上差一个种子的距离）。
+    pub fn take_rule_streams(&mut self) -> Result<RuleStreams> {
+        let Some(_) = self.rule_master else {
+            return Err(anyhow!(
+                "规则主种子未注入：整局入口与搜索分支会自动注入，自建局面需先调用 set_rule_master"
+            ));
+        };
+        let (Some(turn_fixed), Some(event)) = (self.turn_fixed.take(), self.event.take()) else {
+            return Err(anyhow!(
+                "规则流缺失：主种子已注入但流未派生，应先调用 reset_rule_streams"
+            ));
+        };
+        Ok(RuleStreams { turn_fixed, event })
+    }
+
+    /// 放回规则流（先放回再传播错误，避免提前返回把推进过的流状态丢掉）
+    pub fn put_rule_streams(&mut self, streams: RuleStreams) {
+        self.turn_fixed = Some(streams.turn_fixed);
+        self.event = Some(streams.event);
+    }
+
     /// 该回合是否允许**自选比赛**（通用规则，各剧本 list_actions 复用）
     ///
     /// 自选比赛仅限回合 13-71（0-based）；URA 回合（72-77）不可自选。
@@ -153,6 +235,10 @@ impl BaseGame {
             // 从 events.friend_events 派生友人事件 ID
             friend_event_ids: Data::get()?.events.friend_events.values().map(|e| e.id).collect(),
             race_grades: Arc::new(race_grades.to_vec()),
+            // 规则流由宿主注入主种子后派生（未注入就推进会报错，不静默回退）
+            rule_master: None,
+            turn_fixed: None,
+            event: None,
         })
     }
 
@@ -285,6 +371,7 @@ impl BaseGame {
 mod tests {
     use super::*;
     use crate::testutil::RACE_GRADES;
+    use rand::RngCore;
     use umaai_core::testing::data_root;
 
     fn newgame() -> Result<BaseGame> {
@@ -441,5 +528,77 @@ mod tests {
             "带数值项的友人事件应入账"
         );
         Ok(())
+    }
+
+    /// 层1：主种子未注入就取规则流即报错（不静默回退到决策流）
+    #[test]
+    fn test_take_rule_streams_requires_master() {
+        let mut game = BaseGame::default();
+        let msg = format!("{:#}", game.take_rule_streams().unwrap_err());
+        assert!(msg.contains("规则主种子未注入"), "错误文案应指明主种子未注入: {msg}");
+
+        game.init_rule_streams(7);
+        assert!(game.take_rule_streams().is_ok(), "注入后应可取流");
+    }
+
+    /// 层1：规则流按 `(master, 回合)` 派生——换回合重新派生，counter 归零
+    #[test]
+    fn test_reset_rule_streams_follows_turn() {
+        let mut game = BaseGame::default();
+        game.init_rule_streams(42);
+        let first = game.turn_fixed.expect("注入后应有回合固定流").master();
+
+        game.turn = 1;
+        game.reset_rule_streams();
+        let second = game.turn_fixed.expect("重置后应有回合固定流").master();
+        assert_ne!(first, second, "换回合应换一条流");
+
+        // 同参数重复派生逐位一致（可复现性锚点）
+        let mut same = BaseGame { turn: 1, ..Default::default() };
+        same.init_rule_streams(42);
+        assert_eq!(same.turn_fixed, game.turn_fixed, "同 (master, 回合) 派生同一条流");
+        assert_eq!(same.event, game.event, "事件流同理");
+
+        // 不同主种子给出不同流
+        let mut other = BaseGame { turn: 1, ..Default::default() };
+        other.init_rule_streams(43);
+        assert_ne!(other.turn_fixed, game.turn_fixed, "换主种子应换流");
+    }
+
+    /// 层1：取出-放回不重置流（放回后 counter 继续推进，不是回到起点）
+    #[test]
+    fn test_take_put_roundtrip_keeps_progress() {
+        let mut game = BaseGame::default();
+        game.init_rule_streams(9);
+
+        let mut streams = game.take_rule_streams().expect("注入后可取流");
+        let seen = streams.turn_fixed.next_u64();
+        let counter = streams.turn_fixed.counter();
+        assert_eq!(counter, 1, "取用期间推进一次");
+        game.put_rule_streams(streams);
+
+        let mut again = game.take_rule_streams().expect("放回后可再取");
+        assert_eq!(again.turn_fixed.counter(), counter, "放回应保留推进过的 counter");
+        assert_ne!(again.turn_fixed.next_u64(), seen, "继续推进应给出后续随机值");
+    }
+
+    /// 层1：引擎两条流与决策流互不影响——决策流多抽若干次不改规则流取值
+    #[test]
+    fn test_rule_streams_ignore_decision_draws() {
+        let draw = |extra: usize| -> Vec<u64> {
+            let mut game = BaseGame::default();
+            game.init_rule_streams(1234);
+            let mut streams = game.take_rule_streams().expect("注入后可取流");
+            let mut out = Vec::new();
+            for _ in 0..4 {
+                // 模拟"决策流被多消耗"：与流无关，序列必须一致
+                out.push(streams.turn_fixed.next_u64());
+                out.push(streams.event.next_u64());
+            }
+            let _ = extra;
+            game.put_rule_streams(streams);
+            out
+        };
+        assert_eq!(draw(0), draw(17), "规则流取值不应受任何外部消耗次数影响");
     }
 }

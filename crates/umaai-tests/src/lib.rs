@@ -66,6 +66,7 @@ pub mod testing {
     use anyhow::Result;
     use rand::rngs::StdRng;
     use umaai_core::gamedata::EventChoice;
+    use umasim::game::Game;
     use umasim::game::InheritInfo;
     use umasim::game::Trainer;
     use umasim::game::base::BaseAction;
@@ -115,8 +116,15 @@ pub mod testing {
         }
     }
 
+    /// 夹具的规则主种子（与配置默认层 `sim.seed` 同值，`runner_basic` 据此做逐位对照）
+    pub const RULE_MASTER: u64 = 42;
+
     /// 建一局冒烟基础局（与配置默认层同参数）
+    ///
+    /// 建局即注入规则主种子：规则流按 `(master, 回合)` 派生，未注入就推进会报错。
     pub fn basic_newgame() -> Result<BasicGame> {
-        BasicGame::newgame(UMA_ID, &DECK, inherit(), &RACE_GRADES)
+        let mut game = BasicGame::newgame(UMA_ID, &DECK, inherit(), &RACE_GRADES)?;
+        game.set_rule_master(RULE_MASTER);
+        Ok(game)
     }
 }

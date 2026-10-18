@@ -2,7 +2,7 @@
 
 > 本文取代 v1 方案（`umaai-rs/.trae/documents/miko_next_rebuild_plan.md`）。v1 作为机制清单与附录参考随仓保留于
 > [`docs/plan/v1_plan_reference.md`](v1_plan_reference.md)。
-> 本文记录 2026-10-14 定稿决策、2026-10-15 的层界修订、2026-10-16 的独立仓改判与 2026-10-17 的 P4′ 执行定稿（见 §9）；未决项集中在 [`docs/notes/open_items.md`](../notes/open_items.md)。
+> 本文记录 2026-10-14 定稿决策、2026-10-15 的层界修订、2026-10-16 的独立仓改判与 2026-10-17 的 P4′ / P5′ / P6′ 执行定稿（见 §9）；未决项集中在 [`docs/notes/open_items.md`](../notes/open_items.md)。
 
 ---
 
@@ -186,7 +186,7 @@ miko_next/
 | L1 单元（私有细节 / 纯函数） | `crates/<crate>/src/` 内联 | `assert` |
 | L2 模块集成 | `crates/<crate>/tests/` | 结构化 `print` 输出 + Agent 检查 |
 | L3 端到端 | `crates/umaai-tests/tests/` | 结构化 `print` 输出 + Agent 检查 |
-| L4 baseline | `crates/umaai-tests/tests/baseline.rs` + 数据文件 | **自动判定**（比对后返回 `Err` / 非零退出码）+ `--update` |
+| L4 baseline | `crates/umaai-tests/tests/baseline.rs` + `crates/umaai-tests/baselines/*.json` | **自动判定**（比对后返回 `Err` / 非零退出码）+ 重录 `umaai-tools baseline --update` |
 | L5 不变量 | 随 L2 | `print` + Agent |
 
 - **不用 `assert` 的层**：统一用 `testkit::Checker`（打印 + 聚合，失败返回 `Err`），保留 `cargo test` 失败信号
@@ -234,7 +234,11 @@ miko_next/
 | **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | ✅ 已完成（搜索评分为单轴口径，PT 偏好折算率归 `SearchConfig`；批量后端 / leaf 截断估值 / NN 样本导出延后，见 open_items #12–#14；`BasicGame` 接参考实现 + 随机训练员） |
 | **P4′** | 引擎 `umaai`：`Runner` / `Frontend` / `Config` + 单场景协议 + record / luck | ✅ 已完成（P4a 配置层、P4b 前端契约与离线运行器、P4c 运气分与记录装配、P4d 协议通用段 / 终局帧 / 帧通道 / 帧驱动会话；记录落盘与入口层接线归后续阶段） |
 | **P5′** | `umaai-cli`：呈现全入 cli；`BasicGame` 跑满回合冒烟（呈现件是否拆 lib 化以复用给剧本仓 bin，开工时按§2 定） | ✅ 已完成（拆为 lib 呈现件 + 瘦 bin；呈现原语 / 样例前端 / 入口层落地，基础局单局冒烟开箱跑满回合；见下方 P5′ 执行定稿） |
-| **P6′** | `umaai-tools`：探针 / bench / baseline runner + `--update` | — |
+| **P6a′** | `umaai-tools`：跑批设施（固定种子批量跑局 + 分布统计）与固定根搜索探针；单 bin 多子命令 | ✅ 已完成（lib 件 + 瘦 bin，零新增第三方依赖，呈现复用 cli；见下方 P6′ 执行定稿） |
+| **P6b′** | baseline 框架：一基线一 JSON + 判定壳 + 重录入口 | ✅ 已完成（位置 `crates/umaai-tests/baselines/`；判定 `crates/umaai-tests/tests/baseline.rs`，重录 `umaai-tools baseline --update`） |
+| **P6c′** | 数据 / 程序更新器（入口层 `update`） | —（**拆出为独立阶段**：分发源、包格式与交互形态待拍板，旧仓无可移植实现） |
+| **P6e′** | 随机流分层升格为通用机制：决策流 / 局面流 / 事件流分开，剧本轴留剧本；删外挂 CRN | ✅ 已完成（core 已有原语接进计算层；守门用例见下方 P6e′ 执行定稿） |
+| **P6d′** | `umaai-tools` 分支推进对照（复盘用：同根两分支推进 n 回合比差别） | —（待开工；口径依赖 P6e′，见下方 P6e′ 定稿的「后续」） |
 | **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | — |
 
 ### P4′ 执行定稿（2026-10-17 拍板）
@@ -262,6 +266,35 @@ miko_next/
 | 剧本特化渲染 | 剧本自己的分布 / 资源面板**延后到 P7′**（等空剧本模板有真实消费者时定形），本仓只出与剧本无关的原语 |
 | 选择器口径 | 入口只认基础局与契约参考训练员，**未知选择器报错并列出可用值**；剧本装配是剧本仓入口（装配 API 或 bin）的事 |
 | 默认马娘 | 默认配置改用**目标宽松**的马娘，使随机训练员也能跑满全部回合；测试夹具与默认层保持同值并加断言守门 |
+
+### P6′ 执行定稿（2026-10-17 拍板）
+
+| 项 | 定稿 |
+|---|---|
+| 范围切分 | `P6a′` 跑批设施与探针、`P6b′` 基线框架在本轮落地；**数据 / 程序更新器拆出为 `P6c′`**——它依赖分发源、包格式与 HTTP 客户端，且旧仓没有可移植实现（独立 GUI 仓不在移植源内），无源不开工。本轮不动 `umaai-cli` 的入口形态（不为 0 消费者提前引入子命令） |
+| 入口形态 | `umaai-tools` 拆为 **lib 工具件 + 瘦 bin**，bin 为**单 bin 多子命令**（`bench` / `probe` / `baseline`）；入口逻辑在库内以便集成测试注入输出，bin 只收参数、报错、给退出码（与 `umaai-cli` 同法）。选项解析用 `lexopt`：**选项可在子命令前后任意位置**，子命令归属在解析末尾统一校验，故「某子命令不认识的选项」总能被点名而不是靠书写顺序碰巧报错 |
+| 依赖口径 | **只引入一个命令行解析库** `lexopt`（无传递依赖、不做代码生成，选项取值与「不认识就报错」交给它，本层只管子命令归属校验与中文文案）；统计用 `umaai-core` 的统计原语，呈现复用 `umaai-cli` 的 `render` 件（宽度 / 折行 / 表格只做一次），跑局装配**复用入口层的装配函数**（选择器口径只留一处）；**不引微基准框架**（要量的是整局模拟与搜索的端到端成本，旧仓经验是自持跑批 + 单行输出更适合跨 commit 对比） |
+| 输出口径 | 人读摘要（面板 + 表格）+ **脚本可解析的机读单行**（`TAG key=value ...`，值内无空白），`--quiet` 只出机读行；CSV / 归档 / 趋势图仍延后（列契约按真实下游冻结，见 open_items #15） |
+| 基线位置 | `crates/umaai-tests/baselines/`（**一基线一 JSON**，与测试源码分离、离唯一消费者最近） |
+| 基线形态 | `input` **自持**（不读配置层，故宿主覆盖层与数据根配置改不动基线）+ 逐项 `expect`（裸值 = 精确、`{value, tol}` = 带容差）+ `meta`（工具版本、数据 schema 版本、记录日期；**不含任何路径**——来源标识是路径字符串，落进基线即泄露目录结构） |
+| 基线判定 | 判定壳 `crates/umaai-tests/tests/baseline.rs`（薄：发现文件 → 跑 → 比对 → `Checker` 聚合 → `Err`）；模型 / 跑法 / 读写归 `umaai-tools::baseline`；重录 `umaai-tools baseline --update`（跑法不变，只刷新期望值与元信息） |
+| 基线守门面 | **模拟数值位移**（整局终局 / 种子扫描序列 / 固定根搜索分布）；编排与呈现不入基线（各有端到端用例）。判定自带「改动一项期望即变红」的反自证守门，防止判定恒真 |
+| 机读基线口径 | 整数逐位、非整数自动带默认容差（重录时按值自动决定，不手写容差） |
+
+### P6e′ 执行定稿（2026-10-17 拍板）
+
+| 项 | 定稿 |
+|---|---|
+| 动机 | 旧仓拉面的分流（决策流 / 局面流 / 事件流 / 剧本策略流）只在拉面里成立；新仓 core 已逐字移植流原语（`SplitmixRng` / `TurnFixedRng` / `StrategyRng` / `EventRng` / `StreamTag` / `derive_seed`）却**无人使用**。分流升格为引擎通用机制，剧本随机仍归剧本 |
+| 归属 | **引擎两轴 + 剧本一轴**：`BaseGame` 持**回合固定流**（人头分布 / 角标 / hint / 回合固定事件）与**事件流**（回合开始事件链）；**策略流**（动作结算与机制随机）由具体 `Game` 实现自持，从 `rule_master` 派生 |
+| 决策流 | 仍是 `run_stage(trainer, rng)` 的参数，**只喂 `Trainer`**，一局内连续不重置；`run_event` 拆两条：选项走决策流、结算走事件流 |
+| 定种 | `master` 为基点：局面流 `derive_seed(master, [turn])`、事件流 `derive_seed(master, [turn, EVENT_TAG])`、剧本轴 `derive_seed(master, [turn, 自定义 tag])`；**每进入一个回合重新派生**（counter 归零），故同一 master 下"同回合的规则随机"与策略、与决策流消耗无关——CRN 配对由规则层自身承担 |
+| 注入点 | `Game` 增 `rule_master()` / `set_rule_master()`（required）；整局入口 `Runner` / `Session` 用 `sim.seed` 注入，搜索分支 `fork_for_rollout(rollout_seed)` 克隆 + 注入 rollout 种子 |
+| 缺失即报错 | 未注入主种子就推进**报错**，不静默回退单流（旧仓那套回退分支正是要避免的形态） |
+| 命名纪律 | 基座入口叫 `init_rule_streams`（装主种子 + 派生两条流）、契约仍叫 `set_rule_master`：具体局面经 `Deref` 指向底座，同名方法会在调用点静默解析到基座版、绕过剧本自己那条轴。**不加 `base_` / `default_` 词缀**——这两个词已被「基础（设施）」与「默认档」占用；规则记入 `AGENTS.md` |
+| 删除外挂 CRN | `RolloutSeeds::stage_seed`、`FlatSearch::reseed_for_stage`、`SearchConfig::crn_stage_reseed` 与数据根默认层的同名键**一并删除**：规则层接管后不需要第二套对齐机制 |
+| 昂贵之处 | 分流是**语义升级**：同种子数值整体位移（属预期），三份基线全部重录——这正是 L4 基线存在的意义 |
+| 后续 | P6d′（同根分支推进对照）排在 P6e′ 之后：配对由每回合派生天然保证，工具不再需要"按阶段重播种"选项 |
 
 ### 下游可用性改造（2026-10-17 立项）
 

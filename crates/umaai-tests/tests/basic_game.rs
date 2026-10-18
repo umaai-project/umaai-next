@@ -13,11 +13,18 @@ use umaai_tests::Checker;
 use umaai_tests::testing::{RaceFirstTrainer, basic_newgame};
 use umasim::game::Game;
 
+/// 固定种子端到端用的规则主种子（与配置默认层同值）
+const BASELINE_SEED: u64 = 42;
+
 /// 跑一局并返回终局快照（score / pt / five / turn）
-fn run_once() -> Result<(i32, i32, [i32; 5], i32)> {
+///
+/// `seed` 是**规则主种子**：分流后局面/事件随机按 `(master, 回合)` 派生，而参考训练员
+/// 是确定性的（不抽决策流），所以"换种子"要换的是主种子。
+fn run_once_seeded(seed: u64) -> Result<(i32, i32, [i32; 5], i32)> {
     let mut game = basic_newgame()?;
+    game.set_rule_master(seed);
     let trainer = RaceFirstTrainer;
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(seed);
     game.run_full_game(&trainer, &mut rng)?;
     Ok((
         game.uma.calc_score()?,
@@ -33,7 +40,7 @@ fn basic_game_full_run() -> Result<()> {
     Data::init(data_root()?)?;
     let mut c = Checker::new("BasicGame 固定种子端到端");
 
-    let (score, pt, five, turn) = run_once()?;
+    let (score, pt, five, turn) = run_once_seeded(BASELINE_SEED)?;
     c.check(turn == 77, "跑满 78 回合（0-based 末回合 77）");
     c.check(score > 0, "终局评分为正");
     c.check(pt > 0, "终局 PT 为正");
@@ -45,7 +52,7 @@ fn basic_game_full_run() -> Result<()> {
         c.check(five.iter().zip(limits).all(|(&s, l)| s <= l), "五维不超过上限");
     }
     // 可复现性：同种子再跑一次逐项一致
-    let (score2, pt2, five2, turn2) = run_once()?;
+    let (score2, pt2, five2, turn2) = run_once_seeded(BASELINE_SEED)?;
     c.check(
         (score, pt, five, turn) == (score2, pt2, five2, turn2),
         "同种子两次运行逐项一致",
@@ -64,13 +71,9 @@ fn basic_game_seed_varies() -> Result<()> {
     Data::init(data_root()?)?;
     let mut c = Checker::new("BasicGame 种子差异性");
 
-    let mut game = basic_newgame()?;
-    game.run_full_game(&RaceFirstTrainer, &mut StdRng::seed_from_u64(42))?;
-    let a = game.uma.calc_score()?;
-
-    let mut game = basic_newgame()?;
-    game.run_full_game(&RaceFirstTrainer, &mut StdRng::seed_from_u64(4242))?;
-    let b = game.uma.calc_score()?;
+    // 分流后口径：换的是**规则主种子**（参考训练员是确定性的，不消耗决策流）
+    let (a, _, _, _) = run_once_seeded(42)?;
+    let (b, _, _, _) = run_once_seeded(4242)?;
 
     // 事件抽签 / 训练失败等随机路径应导致不同终局（概率上几乎必然）
     c.check(a != b, "不同种子终局评分不同");

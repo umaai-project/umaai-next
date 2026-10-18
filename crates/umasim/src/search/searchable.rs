@@ -92,8 +92,13 @@ impl FlatSearchGame for BasicGame {
         self.apply_action(action, rng)
     }
 
-    /// 基础局随机性全部走传入的 `&mut StdRng`，无内部规则流，故只需克隆局面
-    fn fork_for_rollout(&self, _rollout_seed: u64) -> Self {
-        self.clone()
+    /// 分支 = 克隆局面 + **注入 `master = rollout 种子`**
+    ///
+    /// 规则层按 `(master, 回合)` 每回合派生局面流与事件流，故同一 rollout 序号下各候选
+    /// 面对逐位一致的规则随机；决策流由调用方另行传入，与规则随机互不污染。
+    fn fork_for_rollout(&self, rollout_seed: u64) -> Self {
+        let mut game = self.clone();
+        game.set_rule_master(rollout_seed);
+        game
     }
 }

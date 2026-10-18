@@ -171,7 +171,10 @@ fn run(args: &Args, out: &mut dyn Write) -> Result<()> {
 }
 
 /// 按 `sim.scenario` 装配一局（本仓只认无剧本基础局）
-fn build_game(cfg: &Config) -> Result<BasicGame> {
+///
+/// 入口与 `umaai-tools`（跑批 / 探针）**共用同一个装配点**：选择器口径只此一处，
+/// 工具看到的局面与单局冒烟同源。
+pub fn build_game(cfg: &Config) -> Result<BasicGame> {
     match cfg.sim.scenario.as_str() {
         BASIC_SCENARIO => BasicGame::newgame(cfg.sim.uma, &cfg.sim.cards, cfg.inherit(), cfg.race_grades()?),
         other => bail!("未知剧本 \"{other}\"（本仓 CLI 只认 {BASIC_SCENARIO}；具体剧本由剧本仓自带的 bin 装配）"),
@@ -179,7 +182,7 @@ fn build_game(cfg: &Config) -> Result<BasicGame> {
 }
 
 /// 按 `sim.trainer` 装配训练员（本仓只认契约参考实现）
-fn build_trainer(cfg: &Config) -> Result<RandomTrainer> {
+pub fn build_trainer(cfg: &Config) -> Result<RandomTrainer> {
     match cfg.sim.trainer.as_str() {
         RANDOM_TRAINER => Ok(RandomTrainer),
         other => bail!("未知训练员 \"{other}\"（本仓 CLI 只认 {RANDOM_TRAINER}）"),

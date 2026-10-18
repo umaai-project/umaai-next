@@ -45,11 +45,6 @@ pub struct SearchConfig {
     /// 探索项使用的预期分数标准差（分数量纲）
     pub expected_search_stdev: f64,
 
-    /// 是否按 `(回合, 阶段)` 重播种 rollout 随机流（外挂 CRN 开关）
-    ///
-    /// 只对**规则层未接管随机流**的剧本有意义，见 `FlatSearch::reseed_for_stage`。
-    pub crn_stage_reseed: bool,
-
     /// 是否按 rollout 序号保留有序原始分（教师数据采集用）
     ///
     /// 默认关闭：生产路径不分配缓冲、不写 [`ordered_rollouts`](super::SearchOutput::ordered_rollouts)。
@@ -73,7 +68,6 @@ impl Default for SearchConfig {
             search_group_size: 256,
             search_cpuct: 1.0,
             expected_search_stdev: 2200.0,
-            crn_stage_reseed: true,
             record_ordered_rollouts: false,
             pt_favor_rate: 2.0,
         }
@@ -123,12 +117,6 @@ impl SearchConfig {
         self
     }
 
-    /// 启用 / 禁用按 `(回合, 阶段)` 重播种（外挂 CRN）
-    pub fn with_crn_stage_reseed(mut self, enabled: bool) -> Self {
-        self.crn_stage_reseed = enabled;
-        self
-    }
-
     /// 启用 / 禁用按 rollout 序号保留有序原始分
     pub fn with_record_ordered_rollouts(mut self, enabled: bool) -> Self {
         self.record_ordered_rollouts = enabled;
@@ -169,14 +157,12 @@ mod tests {
             .with_search_group_size(2)
             .with_radical_factor_max(10.0)
             .with_pt_favor_rate(1.0)
-            .with_crn_stage_reseed(false)
             .with_record_ordered_rollouts(true);
         assert_eq!(c.search_n, 8);
         assert!(!c.use_ucb);
         assert_eq!(c.search_group_size, 2);
         assert_eq!(c.radical_factor_max, 10.0);
         assert_eq!(c.pt_favor_rate, 1.0);
-        assert!(!c.crn_stage_reseed);
         assert!(c.record_ordered_rollouts);
     }
 }

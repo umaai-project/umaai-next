@@ -429,22 +429,6 @@ where
         self.simulate_common_with_seeds(game, action, seed, seed)
     }
 
-    /// 按当前 `(回合, 阶段)` 重新播种 rollout 随机流（外挂 CRN）
-    ///
-    /// 只对**规则层未接管随机流**的剧本有意义：这类剧本的专属 rollout 闭包在每个
-    /// 阶段边界调用本方法，使各候选在同一 `(回合, 阶段)` 抽到同一份随机性。规则层
-    /// 已按 `(rollout 种子, 回合)` 自行派生的剧本不要调用它。
-    pub fn reseed_for_stage(&self, rng: &mut StdRng, rollout_seed: u64, game: &G) {
-        if !self.config.crn_stage_reseed {
-            return;
-        }
-        *rng = StdRng::seed_from_u64(RolloutSeeds::stage_seed(
-            rollout_seed,
-            game.turn(),
-            game.crn_stage_key(),
-        ));
-    }
-
     /// 计算激进度因子（确定式，无随机性）
     ///
     /// `(剩余回合 / 总回合)^0.5 × 上限`，总回合取 `max_turn() + 1`（78 回合下与既有

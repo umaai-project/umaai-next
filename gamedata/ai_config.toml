@@ -68,9 +68,6 @@ search_cpuct = 1.0
 # 探索项使用的预期分数标准差
 expected_search_stdev = 2200.0
 
-# 按「回合 × 阶段」重播种 rollout 随机流（外挂 CRN）
-crn_stage_reseed = true
-
 # 是否按 rollout 序号保留有序原始分（仅教师数据采集用）
 record_ordered_rollouts = false
 

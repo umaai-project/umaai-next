@@ -108,7 +108,7 @@ impl Frontend for Recorder {
 
 /// 把基础局推进到首回合训练决策点（与搜索的生产调用点同位置）
 fn decision_point() -> Result<BasicGame> {
-    let mut game = basic_newgame()?;
+    let mut game = basic_newgame()?; // 夹具已注入规则主种子（与配置默认层同值）
     let mut rng = StdRng::seed_from_u64(0);
     for _ in 0..16 {
         if game.stage == BasicStage::Train {
@@ -240,6 +240,8 @@ fn build_basic(base: umasim::game::base::BaseGame) -> Result<BasicGame> {
         base,
         persons: vec![],
         stage: BasicStage::Train,
+        // 剧本自持的策略流：会话在重建局面后会注入主种子并派生各轴，这里留空即可
+        strategy: None,
     };
     game.init_persons()?;
     Ok(game)

@@ -295,7 +295,6 @@ struct SearchOverlay {
     search_group_size: Option<usize>,
     search_cpuct: Option<f64>,
     expected_search_stdev: Option<f64>,
-    crn_stage_reseed: Option<bool>,
     record_ordered_rollouts: Option<bool>,
     pt_favor_rate: Option<f64>,
 }
@@ -322,9 +321,6 @@ impl SearchOverlay {
         }
         if let Some(v) = self.expected_search_stdev {
             cfg.expected_search_stdev = v;
-        }
-        if let Some(v) = self.crn_stage_reseed {
-            cfg.crn_stage_reseed = v;
         }
         if let Some(v) = self.record_ordered_rollouts {
             cfg.record_ordered_rollouts = v;
@@ -420,7 +416,6 @@ use_ucb = true
 search_group_size = 256
 search_cpuct = 1.0
 expected_search_stdev = 2200.0
-crn_stage_reseed = true
 record_ordered_rollouts = false
 pt_favor_rate = 2.0
 

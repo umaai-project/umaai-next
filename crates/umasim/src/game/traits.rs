@@ -13,6 +13,7 @@ use rand::rngs::StdRng;
 use rand_distr::{Distribution, Uniform};
 use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, EventChoice, EventData, TriggerType};
+use umaai_core::rng::EventRng;
 
 use super::PersonType;
 use crate::game::{CardTrainingEffect, StageId, SupportCard, Uma};
@@ -94,6 +95,17 @@ pub trait Game: Clone + TrainingValueSource {
     fn turn(&self) -> i32;
     /// 最大回合数 getter
     fn max_turn(&self) -> i32;
+    /// 规则主种子；未注入时返回 `None`
+    ///
+    /// 引擎的**局面流**与**事件流**都按 `(master, turn)` 每回合派生（见
+    /// 基座入口 `init_rule_streams`）；剧本自己的机制随机也从这里取基点派生，或直接
+    /// 复用规则层：**决策流只喂 `Trainer`**，局面/事件随机绝不与决策抽签共用一条流。
+    fn rule_master(&self) -> Option<u64>;
+    /// 注入规则主种子，并按当前回合派生出规则流
+    ///
+    /// 注入点：整局入口（`Runner` / `Session`）与搜索分支（`FlatSearchGame::fork_for_rollout`）。
+    /// 未注入就推进会**报错**，不静默回退单流。
+    fn set_rule_master(&mut self, master: u64);
     /// 当前阶段位置（剧本自定的数字标识）
     ///
     /// 阶段**只表示位置**，不承载中间状态（吃哪碗面、选了哪个地区在局面字段里）；
@@ -125,11 +137,18 @@ pub trait Game: Clone + TrainingValueSource {
     fn apply_event(&mut self, event: &EventData, choice: usize, rng: &mut impl Rng) -> Result<()>;
     /// 执行事件，如果有选项，交给 Trainer 去决定
     ///
-    /// `player_select = true` 且多选项时调用 Trainer 决策（玩家决策）；
-    /// 否则直接选第 0 组选项，由 `apply_event` 按 prob/result 内部决定分支。
-    fn run_event<T: Trainer<Self>>(&mut self, event: &EventData, trainer: &T, rng: &mut StdRng) -> Result<()> {
+    /// 两条流分工：`player_select = true` 且多选项时用**决策流** `decision` 调 Trainer 决策；
+    /// 事件结果一律用**事件流** `event_rng` 结算。合并成一条会让"选得多/少"位移事件结果，
+    /// 也会让同一回合各分支的随机性互相污染。
+    fn run_event<T: Trainer<Self>>(
+        &mut self,
+        event: &EventData,
+        trainer: &T,
+        decision: &mut StdRng,
+        event_rng: &mut EventRng,
+    ) -> Result<()> {
         if event.player_select && event.choices.len() > 1 {
-            let selection = trainer.select_event_choice(self, event, &event.choices, rng)?;
+            let selection = trainer.select_event_choice(self, event, &event.choices, decision)?;
             if selection >= event.choices.len() {
                 return Err(anyhow!(
                     "事件选项索引超出范围: selection={}, choices_len={}, event#{} {}",
@@ -139,9 +158,9 @@ pub trait Game: Clone + TrainingValueSource {
                     event.name
                 ));
             }
-            self.apply_event(event, selection, rng)
+            self.apply_event(event, selection, event_rng)
         } else {
-            self.apply_event(event, 0, rng)
+            self.apply_event(event, 0, event_rng)
         }
     }
     /// provided: 列出本回合触发的事件（随机 / 固定回合触发）
@@ -162,17 +181,11 @@ pub trait Game: Clone + TrainingValueSource {
             .collect()
     }
     /// provided: 执行指定动作
+    ///
+    /// 传进来的 `rng` 应当是**策略流**（动作结算随机），不是决策流：本方法只负责把动作
+    /// 落到局面上，取哪条流由调用方（各剧本的 `run_stage`）决定。
     fn apply_action(&mut self, action: &Self::Action, rng: &mut impl Rng) -> Result<()> {
         action.apply(self, rng)
-    }
-    /// provided: 列出动作，交给训练员判定并执行
-    fn list_and_apply_action<T: Trainer<Self>>(&mut self, trainer: &T, rng: &mut StdRng) -> Result<()> {
-        let actions = self.list_actions()?;
-        if !actions.is_empty() {
-            let selection = trainer.select_action(self, &actions, rng)?;
-            self.apply_action(&actions[selection], rng)?;
-        }
-        Ok(())
     }
     /// persons getter
     fn persons(&self) -> &[Self::Person];

@@ -67,6 +67,8 @@ impl<'a> Runner<'a> {
         trainer: &T,
         src: Option<&dyn DecisionSource>,
     ) -> Result<Summary> {
+        // 规则主种子：本局种子。引擎的局面/事件流与剧本自持的策略流都按它派生
+        game.set_rule_master(self.cfg.sim.seed);
         self.fe.on_run_start(&RunStart {
             scenario: self.cfg.sim.scenario.clone(),
             trainer: self.cfg.sim.trainer.clone(),

@@ -30,12 +30,15 @@ const DECK: [u32; 6] = [302424, 302464, 302484, 302564, 302574, 302644];
 /// 每候选搜索次数：小规模，只守结构与可复现性
 const SEARCH_N: usize = 4;
 
+/// 夹具的规则主种子与决策流种子（与 `basic_game` 端到端同参数）
+const SEED: u64 = 42;
+
 /// 训练阶段的阶段键（`FlatSearchGame::crn_stage_key` 的显式映射）
 const TRAIN_STAGE_KEY: u64 = 3;
 
 fn newgame() -> Result<BasicGame> {
     Data::init(data_root()?)?;
-    BasicGame::newgame(
+    let mut game = BasicGame::newgame(
         UMA_ID,
         &DECK,
         InheritInfo {
@@ -43,7 +46,9 @@ fn newgame() -> Result<BasicGame> {
             extra_count: [0, 30, 0, 0, 30, 40],
         },
         &RACE_GRADES,
-    )
+    )?;
+    game.set_rule_master(SEED);
+    Ok(game)
 }
 
 /// 只用于推进阶段的训练员：事件选项恒选第 0 组

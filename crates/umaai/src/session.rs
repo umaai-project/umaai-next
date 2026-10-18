@@ -11,11 +11,12 @@
 #[cfg(feature = "file-channel")]
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use umaai_core::Data;
 use umaai_core::gamedata::EventData;
+use umaai_core::rng::{EventRng, StreamTag, derive_seed};
 use umasim::game::base::BaseGame;
 use umasim::game::{Game, Trainer};
 
@@ -211,6 +212,8 @@ impl<'a, G: Game, T: Trainer<G>> Session<'a, G, T> {
         // 帧内事件由会话统一走事件决策（局面里的同一份不再结算，避免两处各跑一遍）
         let events = base.unresolved_events.clone();
         let mut game = (self.build)(base)?;
+        // 帧驱动同样要注入规则主种子（每帧重建局面，故每帧都要注入）
+        game.set_rule_master(self.cfg.sim.seed);
 
         if self.frames == 1 {
             self.fe.on_run_start(&RunStart {
@@ -257,13 +260,20 @@ impl<'a, G: Game, T: Trainer<G>> Session<'a, G, T> {
     }
 
     /// 帧内事件逐个走事件决策；返回是否含「多选项」事件（决定是否记一条决策）
+    ///
+    /// 选项用会话决策流、结果用**事件流**（按 `(master, 当前回合)` 派生，与模拟路径同一
+    /// 公式）：同一条流既结算又决策会让两处随机互相位移。
     fn run_events(&mut self, game: &mut G, events: &[EventData]) -> Result<bool> {
+        let master = game
+            .rule_master()
+            .ok_or_else(|| anyhow!("规则主种子未注入：会话在重建局面后应先注入 master"))?;
+        let mut event_rng = EventRng::new(derive_seed(master, &[game.turn() as u64, StreamTag::Event.tag()]));
         let mut multi = false;
         for ev in events {
             if ev.player_select && ev.choices.len() > 1 {
                 multi = true;
             }
-            game.run_event(ev, self.trainer, &mut self.rng)?;
+            game.run_event(ev, self.trainer, &mut self.rng, &mut event_rng)?;
         }
         Ok(multi)
     }

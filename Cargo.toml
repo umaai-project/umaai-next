@@ -14,11 +14,13 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-# 内部 crate —— 单向依赖：cli → umaai → umasim → umaai-core
+# 内部 crate —— 单向依赖：cli → umaai → umasim → umaai-core；
+# 样例面 tools / tests 依赖引擎并复用 cli 的装配与呈现件（tests → tools 用于基线判定）
 umaai-core = { path = "crates/umaai-core" }
 umasim = { path = "crates/umasim" }
 umaai = { path = "crates/umaai" }
 umaai-cli = { path = "crates/umaai-cli" }
+umaai-tools = { path = "crates/umaai-tools" }
 
 # 轻量基础依赖（核心层仅允许此类；终端/计算/网络重依赖不得进入核心层）
 # 版本按当前最新已发布版本钉下限（`cargo add` 不支持写 workspace 依赖，故直接登记）
@@ -28,6 +30,7 @@ console = "0.16.4"
 enum-iterator = "2.3.0"
 hashbrown = { version = "0.17.1", features = ["serde"] }
 int-enum = "1.2.0"
+lexopt = "0.3.2"
 log = { version = "0.4.34", features = ["std"] }
 notify = "8.2.0"
 rand = { version = "0.9.5", features = ["serde", "std_rng"] }

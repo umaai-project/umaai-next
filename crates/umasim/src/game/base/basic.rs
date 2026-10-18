@@ -14,9 +14,10 @@ use rand::rngs::StdRng;
 use rand::seq::IndexedRandom;
 use rand_distr::{Distribution, weighted::WeightedIndex};
 use umaai_core::gamedata::EventData;
+use umaai_core::rng::{StrategyRng, StreamTag, derive_seed};
 use umaai_core::{AttributeArray, Data, Ill};
 
-use crate::game::base::{BaseAction, BaseGame, BasePerson, BasicStage};
+use crate::game::base::{BaseAction, BaseGame, BasePerson, BasicStage, RuleStreams};
 use crate::game::{
     ActionEnum, FriendOutState, Game, InheritInfo, PersonType, StageId, SupportCard, Trainer, TrainingBasicTable,
     TrainingValueSource, Uma, UmaFlagsExt, extra_training_event, hint_attr_event, hint_skill_event,
@@ -219,6 +220,11 @@ pub struct BasicGame {
     pub persons: Vec<BasePerson>,
     /// 回合阶段（基础局私有的阶段机；真实剧本自持各自的阶段机）
     pub stage: BasicStage,
+    /// 策略流：本局面的**动作结算**随机（训练成败 / 休息 / 外出）
+    ///
+    /// 这是**剧本轴**：引擎只提供决策流与局面 / 事件流，机制随机由各剧本自持。派生与重置
+    /// 随 [`Game::set_rule_master`] 与回合边界统一走，外部不要直接改。
+    pub strategy: Option<StrategyRng>,
 }
 
 impl Deref for BasicGame {
@@ -266,9 +272,79 @@ impl BasicGame {
             )?,
             persons: vec![],
             stage: BasicStage::Begin,
+            strategy: None,
         };
         ret.init_persons()?;
         Ok(ret)
+    }
+
+    /// 单阶段推进：流已按轴取出，本函数只按阶段分派
+    fn stage_body<T: Trainer<Self>>(
+        &mut self,
+        trainer: &T,
+        decision: &mut StdRng,
+        s: &mut RuleStreams,
+        strategy: &mut StrategyRng,
+    ) -> Result<()> {
+        match self.stage {
+            BasicStage::Begin => {
+                let mut events = self.generate_events(&mut s.event);
+                // 友人强制事件
+                if self.friend.out_state == FriendOutState::AfterUnlock {
+                    if self.turn == 24 {
+                        events.push(Data::get()?.events.friend_events["newyear"].clone());
+                    } else if self.turn == 77 {
+                        self.unresolved_events
+                            .push(Data::get()?.events.friend_events["end"].clone());
+                    }
+                }
+                // 抽签事件
+                if self.turn == 48 {
+                    self.unresolved_events
+                        .push(Data::get()?.system_event("ticket")?.clone());
+                }
+                // 育成结束事件
+                if self.turn == 77 {
+                    self.unresolved_events
+                        .push(Data::get()?.system_event("ending")?.clone());
+                }
+                // 执行回合前事件
+                for event in &events {
+                    self.run_event(event, trainer, decision, &mut s.event)?;
+                }
+            }
+            BasicStage::Distribute => {
+                if self.is_race_turn() {
+                    self.reset_distribution();
+                } else {
+                    self.distribute_all(&mut s.turn_fixed)?;
+                    self.distribute_hint(&mut s.turn_fixed)?;
+                }
+            }
+            BasicStage::Train => {
+                let actions = self.list_actions()?;
+                let selection = trainer.select_action(self, &actions, decision)?;
+                // 动作结算走策略流：与训练员抽签分开，改决策流消耗不会位移结算随机
+                self.apply_action(&actions[selection], strategy)?;
+            }
+            BasicStage::AfterTrain => {
+                let after_events = std::mem::take(&mut self.unresolved_events);
+                for event in &after_events {
+                    self.run_event(event, trainer, decision, &mut s.event)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// 按 `(master, turn)` 派生本局面自持的策略流（注入点与回合边界调用）
+    fn reset_strategy_stream(&mut self) {
+        let turn = self.base.turn as u64;
+        self.strategy = self
+            .base
+            .master()
+            .map(|master| StrategyRng::new(derive_seed(master, &[turn, StreamTag::Strategy.tag()])));
     }
 
     /// 增加羁绊（爱娇的全局 +2 统一在此施加；同步支援卡面羁绊；上限 100）
@@ -293,6 +369,16 @@ impl Game for BasicGame {
     type Person = BasePerson;
     type Action = BasicAction;
 
+    fn rule_master(&self) -> Option<u64> {
+        self.base.master()
+    }
+
+    fn set_rule_master(&mut self, master: u64) {
+        // 引擎两轴 + 本局面的策略轴一起重置（走 init_rule_streams 而不是同名方法：见其文档）
+        self.base.init_rule_streams(master);
+        self.reset_strategy_stream();
+    }
+
     fn init_persons(&mut self) -> Result<()> {
         let persons = self.deck.iter().map(BasePerson::try_from).collect::<Result<Vec<_>>>()?;
         for p in persons {
@@ -315,6 +401,9 @@ impl Game for BasicGame {
             // 下一个回合
             self.turn += 1;
             self.stage = BasicStage::Begin;
+            // 新回合：两条引擎流与自持的策略流一起按 `(master, 新回合)` 重新派生
+            self.base.reset_rule_streams();
+            self.reset_strategy_stream();
             // 检查自选比赛
             return self.check_free_race();
         } else {
@@ -451,56 +540,19 @@ impl Game for BasicGame {
         }
     }
 
-    fn run_stage<T: Trainer<Self>>(&mut self, trainer: &T, rng: &mut StdRng) -> Result<()> {
-        match self.stage {
-            BasicStage::Begin => {
-                let mut events = self.generate_events(rng);
-                // 友人强制事件
-                if self.friend.out_state == FriendOutState::AfterUnlock {
-                    if self.turn == 24 {
-                        events.push(Data::get()?.events.friend_events["newyear"].clone());
-                    } else if self.turn == 77 {
-                        self.unresolved_events
-                            .push(Data::get()?.events.friend_events["end"].clone());
-                    }
-                }
-                // 抽签事件
-                if self.turn == 48 {
-                    self.unresolved_events
-                        .push(Data::get()?.system_event("ticket")?.clone());
-                }
-                // 育成结束事件
-                if self.turn == 77 {
-                    self.unresolved_events
-                        .push(Data::get()?.system_event("ending")?.clone());
-                }
-                // 执行回合前事件
-                for event in &events {
-                    self.run_event(event, trainer, rng)?;
-                }
-            }
-            BasicStage::Distribute => {
-                if self.is_race_turn() {
-                    self.reset_distribution();
-                } else {
-                    self.distribute_all(rng)?;
-                    self.distribute_hint(rng)?;
-                }
-            }
-            BasicStage::Train => {
-                let actions = self.list_actions()?;
-                let selection = trainer.select_action(self, &actions, rng)?;
-                self.apply_action(&actions[selection], rng)?;
-            }
-            BasicStage::AfterTrain => {
-                let after_events = std::mem::take(&mut self.unresolved_events);
-                for event in &after_events {
-                    self.run_event(event, trainer, rng)?;
-                }
-            }
-            _ => {}
-        }
-        Ok(())
+    fn run_stage<T: Trainer<Self>>(&mut self, trainer: &T, decision: &mut StdRng) -> Result<()> {
+        // 三条轴各就各位：局面流 / 事件流从底座取出，策略流本局面自持，决策流只给 Trainer。
+        // 取出-放回成对执行（即使中途出错也先放回再传播），避免推进过的流状态被丢掉。
+        let mut streams = self.base.take_rule_streams()?;
+        let Some(mut strategy) = self.strategy else {
+            return Err(anyhow!(
+                "策略流缺失：主种子已注入但策略流未派生，应先调用 set_rule_master"
+            ));
+        };
+        let res = self.stage_body(trainer, decision, &mut streams, &mut strategy);
+        self.base.put_rule_streams(streams);
+        self.strategy = Some(strategy);
+        res
     }
 
     /// 使事件生效（无选项）。修改羁绊和特殊事件的部分需要在当前类型里完成
@@ -649,6 +701,7 @@ mod tests {
             },
             &RACE_GRADES,
         )?;
+        game.set_rule_master(42);
         assert_eq!(game.persons.len(), 7, "6 卡 + 理事长");
 
         let trainer = RaceFirstTrainer;
@@ -733,6 +786,7 @@ mod tests {
             InheritInfo::default(),
             &RACE_GRADES,
         )?;
+        game.set_rule_master(42);
         assert_eq!(game.deck.len(), 5);
         assert_eq!(game.persons.len(), 6, "5 卡 + 理事长");
         game.run_full_game(&RaceFirstTrainer, &mut StdRng::seed_from_u64(42))?;

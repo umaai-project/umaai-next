@@ -25,10 +25,15 @@ pub const UMA_ID: u32 = 101901;
 /// 基础局夹具卡组
 pub const DECK: [u32; 6] = [302424, 302464, 302484, 302564, 302574, 302644];
 
+/// 夹具的规则主种子（与决策流种子无关；固定值保证可复现）
+pub const RULE_MASTER: u64 = 0;
+
 /// 建立一局基础局（幂等初始化数据层 + 固定马娘 / 卡组 / 继承）
+///
+/// 建局即注入规则主种子：规则流按 `(master, 回合)` 派生，未注入就推进会报错。
 pub fn basic_game() -> Result<BasicGame> {
     Data::init(data_root()?)?;
-    BasicGame::newgame(
+    let mut game = BasicGame::newgame(
         UMA_ID,
         &DECK,
         InheritInfo {
@@ -36,7 +41,9 @@ pub fn basic_game() -> Result<BasicGame> {
             extra_count: [0, 30, 0, 0, 30, 40],
         },
         &RACE_GRADES,
-    )
+    )?;
+    game.set_rule_master(RULE_MASTER);
+    Ok(game)
 }
 
 /// 只用于推进阶段的训练员：事件选项恒选第 0 组（未走到 Train 阶段不会被调用）

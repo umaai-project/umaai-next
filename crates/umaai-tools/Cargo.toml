@@ -9,3 +9,8 @@ umaai-core.workspace = true
 umasim.workspace = true
 umaai.workspace = true
 anyhow.workspace = true
+umaai-cli.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+serde = { workspace = true, features = ["derive"] }
+lexopt.workspace = true

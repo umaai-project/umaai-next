@@ -13,7 +13,7 @@ use rand::RngCore;
 /// SplitMix64 黄金比例 gamma（标准常数，冻结不可改）
 pub const GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
 
-/// SplitMix64 finalizer 混淆常数 A（冻结不可改；[`crate::crn::RolloutSeeds::stage_seed`] 亦用它）
+/// SplitMix64 finalizer 混淆常数 A（冻结不可改）
 pub const MIX_A: u64 = 0xBF58_476D_1CE4_E5B9;
 /// SplitMix64 finalizer 混淆常数 B（冻结不可改）
 const MIX_B: u64 = 0x94D0_49BB_1331_11EB;

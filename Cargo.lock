@@ -457,6 +457,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lexopt"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "803ec87c9cfb29b9d2633f20cba1f488db3fd53f2158b1024cbefb47ba05d413"
+
+[[package]]
 name = "libc"
 version = "0.2.190"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1000,6 +1006,7 @@ dependencies = [
  "umaai",
  "umaai-cli",
  "umaai-core",
+ "umaai-tools",
  "umasim",
 ]
 
@@ -1008,7 +1015,12 @@ name = "umaai-tools"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "lexopt",
+ "rand",
+ "serde",
+ "serde_json",
  "umaai",
+ "umaai-cli",
  "umaai-core",
  "umasim",
 ]
