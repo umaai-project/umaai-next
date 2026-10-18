@@ -3,9 +3,10 @@
 //! 覆盖：跑批的逐局一致性与分布口径、探针的预算与候选对齐、入口层的机读行与子命令
 //! 分发（含基线校验路径）。不设数值基线——工具有没有量对是这里的判据，量到多少归 L4。
 
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result};
 use umaai::Config;
-use umaai_cli::cli::CONFIG_DIR;
 use umaai_core::Data;
 use umaai_core::testing::{data_root, workspace_root};
 use umaai_tests::Checker;
@@ -15,11 +16,18 @@ use umaai_tools::{batch, probe};
 /// 探针冒烟的搜索预算（只要够小就跑得快）
 const SEARCH_N: usize = 4;
 
-/// 载入配置并初始化静态数据（与 `umaai-tools` 入口同一条链）
-fn setup() -> Result<Config> {
+/// 测试用的宿主目录（`target/` 下，gitignore 覆盖）
+fn host_dir(tag: &str) -> Result<PathBuf> {
+    let dir = workspace_root()?.join("target/test-tmp").join(tag);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// 载入配置并初始化静态数据（与 `umaai-tools` 入口同一条链；宿主目录注入，不随运行目录漂移）
+fn setup(host: &Path) -> Result<Config> {
     let root = data_root()?;
     Data::init(&root).context("载入数据根失败")?;
-    Config::load_with_overlay_file(&root, CONFIG_DIR).context("载入配置失败")
+    Config::load_with_overlay_file(&root, host).context("载入配置失败")
 }
 
 /// 构造带程序名的 argv
@@ -31,7 +39,7 @@ fn argv(rest: &[String]) -> Vec<String> {
 
 #[test]
 fn test_batch_and_probe() -> Result<()> {
-    let cfg = setup()?;
+    let cfg = setup(&host_dir("tools-smoke-host")?)?;
     let mut checker = Checker::new("umaai-tools 跑批与探针");
 
     // 跑批：同参数两次必须逐位一致（工具的量具本身要可复现）
@@ -104,13 +112,14 @@ fn test_batch_and_probe() -> Result<()> {
 
 #[test]
 fn test_entry_layer() -> Result<()> {
-    setup()?;
+    let host = host_dir("tools-entry-host")?;
+    setup(&host)?;
     let mut checker = Checker::new("umaai-tools 入口层");
 
     // bench --quiet：只出一行机读结果
     let root = data_root()?;
     let mut out = Vec::new();
-    cli::run_from_args(
+    cli::run_from_args_with_host_dir(
         &argv(&[
             "bench".to_string(),
             "--runs".to_string(),
@@ -120,6 +129,7 @@ fn test_entry_layer() -> Result<()> {
             root.display().to_string(),
         ]),
         &mut out,
+        &host,
     )?;
     let text = String::from_utf8(out).context("输出应为 UTF-8")?;
     println!("bench 机读输出 = {}", text.trim_end());
@@ -132,7 +142,7 @@ fn test_entry_layer() -> Result<()> {
 
     // baseline 校验路径：只跑一份，确认入口分发到判定并给出结论行
     let mut out = Vec::new();
-    cli::run_from_args(
+    cli::run_from_args_with_host_dir(
         &argv(&[
             "baseline".to_string(),
             "--only".to_string(),
@@ -146,6 +156,7 @@ fn test_entry_layer() -> Result<()> {
                 .to_string(),
         ]),
         &mut out,
+        &host,
     )?;
     let text = String::from_utf8(out).context("输出应为 UTF-8")?;
     println!("baseline 输出 = {}", text.trim_end());
@@ -155,15 +166,36 @@ fn test_entry_layer() -> Result<()> {
         "总结行为机读格式且失败数为 0",
     );
 
+    // 覆盖层从注入的宿主目录读：坏覆盖层在入口即报错（与主线同一条装配链）
+    let bad = host.join("bad");
+    std::fs::create_dir_all(&bad)?;
+    std::fs::write(bad.join("ai_config.toml"), "[sim]\nume = 1\n")?;
+    let err = cli::run_from_args_with_host_dir(
+        &argv(&[
+            "bench".to_string(),
+            "--runs".to_string(),
+            "1".to_string(),
+            "--data-root".to_string(),
+            root.display().to_string(),
+        ]),
+        &mut Vec::new(),
+        &bad,
+    );
+    let msg = err.as_ref().map_or_else(|e| format!("{e:#}"), |_| String::new());
+    checker.check(
+        err.is_err() && msg.contains("ume"),
+        &format!("坏覆盖层在入口即报错: {msg}"),
+    );
+
     // 未知子命令与只打用法
     checker.check(
-        cli::run_from_args(&argv(&["nope".to_string()]), &mut Vec::new()).is_err(),
+        cli::run_from_args_with_host_dir(&argv(&["nope".to_string()]), &mut Vec::new(), &host).is_err(),
         "未知子命令报错",
     );
 
     // 零预算探针直接拒绝（不给「0 次搜索」这种无意义输入留后门）
     checker.check(
-        cli::run_from_args(
+        cli::run_from_args_with_host_dir(
             &argv(&[
                 "probe".to_string(),
                 "--search-n".to_string(),
@@ -172,13 +204,14 @@ fn test_entry_layer() -> Result<()> {
                 root.display().to_string(),
             ]),
             &mut Vec::new(),
+            &host,
         )
         .is_err(),
         "零预算探针报错",
     );
 
     let mut out = Vec::new();
-    cli::run_from_args(&argv(&["-h".to_string()]), &mut out)?;
+    cli::run_from_args_with_host_dir(&argv(&["-h".to_string()]), &mut out, &host)?;
     checker.check(String::from_utf8_lossy(&out).contains("baseline"), "帮助列出子命令");
 
     checker.finish()

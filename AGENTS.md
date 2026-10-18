@@ -74,6 +74,12 @@
 
 - PowerShell 下可用：`cargo nextest`、`tokei`、`grep`。
 
+### Cargo 操作
+1. **仍用官方命令**：加依赖 / 拉包 / 校验走 `cargo add` / `cargo fetch` / `cargo check` 等，不要手改 `Cargo.toml` 的 `dependencies`、不要搬动或复制 registry 缓存来绕开。
+2. **碰 registry 前先请求提权**：默认工作模式下 `~/.cargo` 只读（registry cache / index 不可写），`cargo add` / `fetch` / 需要重新解析依赖的 `check` 会失败——**先向用户请求提权**再执行。
+3. **日常编译 / 测试 / lint 加 `--offline`**：依赖齐备时不碰 registry 与网络，默认模式下也能跑完。
+4. **同一 target 目录一次只跑一个 cargo**：并发会互相等锁（`Blocking waiting for file lock on artifact directory` / `package cache`），表现为「卡死」；跑前确认没有残留的后台 cargo 任务。
+
 ### Git 操作
 1. **不自动提交 / 推送**：Agent 不主动 `git commit`、`git push`。先确认用户已完成全部想做的调整，再进入提交准备与提交。
 2. **提交前准备**：提交准备阶段统一更新三个文档——`docs/changelog.md` / `docs/issues.md` / `docs/project_context.md`（规则见「文档规则」），由用户确认后再 `git commit`。

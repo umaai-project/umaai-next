@@ -1,10 +1,11 @@
 //! 入口层：参数解析 + 子命令分发
 //!
-//! 入口逻辑落在库里而不在 bin：集成测试可以直接调 [`run_from_args`] 并注入输出目标；
+//! 入口逻辑落在库里而不在 bin：集成测试可以直接调 [`run_from_args`]
+//! （宿主目录可注入的形态是 [`run_from_args_with_host_dir`]）并注入输出目标；
 //! bin 只收参数、报告失败、给退出码（与 `umaai-cli` 同法）。
 //!
-//! 三个子命令共用一条数据装配链：配置层（默认层 + 工作目录同名覆盖层）取参数、静态数据
-//! 按 `--data-root` 载入，故工具看到的数值与单局入口**同源**。
+//! 三个子命令共用一条数据装配链：配置层（默认层 + 宿主目录同名覆盖层，宿主目录可注入）
+//! 取参数、静态数据按 `--data-root` 载入，故工具看到的数值与单局入口**同源**。
 //!
 //! 选项解析用 `lexopt`（只做「取到令牌」这一件事，不生成代码、不替调用方规定结构）：
 //! 取值语法、`--opt=val`、短选项与「不认识就报错」都由它兜住，本层只负责**子命令归属
@@ -288,7 +289,17 @@ fn bad_arg(err: impl std::fmt::Display) -> anyhow::Error {
 }
 
 /// 入口：解析参数并执行子命令（`argv` 含程序名；输出写入 `out`）
+///
+/// 覆盖层目录取 `umaai-cli` 的约定值（当前目录）；要注入别的目录用
+/// [`run_from_args_with_host_dir`]。
 pub fn run_from_args(argv: &[String], out: &mut dyn Write) -> Result<()> {
+    run_from_args_with_host_dir(argv, out, Path::new(umaai_cli::cli::CONFIG_DIR))
+}
+
+/// 入口（**宿主目录可注入**）：配置覆盖层取 `host_dir` 下的同名文件
+///
+/// 与 `umaai-cli` 同一条装配链；测试与内嵌宿主注入自己的目录，工具口径因此不随运行目录漂移。
+pub fn run_from_args_with_host_dir(argv: &[String], out: &mut dyn Write, host_dir: &Path) -> Result<()> {
     let args = Args::parse(argv)?;
     let width = report::resolve_width(args.width);
     let Some(cmd) = args.cmd.clone() else {
@@ -296,23 +307,30 @@ pub fn run_from_args(argv: &[String], out: &mut dyn Write) -> Result<()> {
         return Ok(());
     };
     match cmd {
-        Cmd::Bench { runs, seed } => run_bench(&args, width, runs, seed, out),
-        Cmd::Probe { seed, search_n } => run_probe(&args, width, seed, search_n, out),
-        Cmd::Baseline { dir, only, update } => run_baseline(&args, &dir, &only, update, out),
+        Cmd::Bench { runs, seed } => run_bench(&args, width, runs, seed, host_dir, out),
+        Cmd::Probe { seed, search_n } => run_probe(&args, width, seed, search_n, host_dir, out),
+        Cmd::Baseline { dir, only, update } => run_baseline(&args, &dir, &only, update, host_dir, out),
     }
 }
 
-/// 载入配置（默认层 + 工作目录覆盖层）并初始化静态数据
-fn setup(data_root: &Path) -> Result<Config> {
+/// 载入配置（默认层 + 宿主目录覆盖层）并初始化静态数据
+fn setup(data_root: &Path, host_dir: &Path) -> Result<Config> {
     // 与 `umaai-cli` 同一条链：配置先于静态数据，两份 ai_config.toml 都在数据加载之外
-    let cfg = Config::load_with_overlay_file(data_root, umaai_cli::cli::CONFIG_DIR)?;
+    let cfg = Config::load_with_overlay_file(data_root, host_dir)?;
     Data::init(data_root)?;
     Ok(cfg)
 }
 
 /// `bench`：批量跑局
-fn run_bench(args: &Args, width: usize, runs: Option<u32>, seed: Option<u64>, out: &mut dyn Write) -> Result<()> {
-    let cfg = setup(&args.data_root)?;
+fn run_bench(
+    args: &Args,
+    width: usize,
+    runs: Option<u32>,
+    seed: Option<u64>,
+    host_dir: &Path,
+    out: &mut dyn Write,
+) -> Result<()> {
+    let cfg = setup(&args.data_root, host_dir)?;
     let spec = batch::Spec {
         runs: runs.unwrap_or(cfg.sim.runs),
         seed: seed.unwrap_or(cfg.sim.seed),
@@ -385,8 +403,15 @@ fn run_bench(args: &Args, width: usize, runs: Option<u32>, seed: Option<u64>, ou
 }
 
 /// `probe`：固定根搜索成本探针
-fn run_probe(args: &Args, width: usize, seed: Option<u64>, search_n: Option<usize>, out: &mut dyn Write) -> Result<()> {
-    let mut cfg = setup(&args.data_root)?;
+fn run_probe(
+    args: &Args,
+    width: usize,
+    seed: Option<u64>,
+    search_n: Option<usize>,
+    host_dir: &Path,
+    out: &mut dyn Write,
+) -> Result<()> {
+    let mut cfg = setup(&args.data_root, host_dir)?;
     if let Some(n) = search_n {
         if n == 0 {
             bail!("--search-n 必须 ≥ 1（零预算的搜索没有意义）");
@@ -468,8 +493,15 @@ fn run_probe(args: &Args, width: usize, seed: Option<u64>, search_n: Option<usiz
 }
 
 /// `baseline`：校验或重录
-fn run_baseline(args: &Args, dir: &Path, only: &[String], update: bool, out: &mut dyn Write) -> Result<()> {
-    setup(&args.data_root)?;
+fn run_baseline(
+    args: &Args,
+    dir: &Path,
+    only: &[String],
+    update: bool,
+    host_dir: &Path,
+    out: &mut dyn Write,
+) -> Result<()> {
+    setup(&args.data_root, host_dir)?;
     let files = baseline::list_cases(dir)?;
     let selected: Vec<PathBuf> = files
         .into_iter()

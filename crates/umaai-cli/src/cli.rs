@@ -4,8 +4,8 @@
 //! 是剧本仓自带 bin 的事（见 `docs/plan/miko_next_plan.md` §2「剧本仓形态」）。未知选择器
 //! **报错并列出可用值**，不静默兜底——与配置层「未知键严格报错」同一口径。
 //!
-//! 入口逻辑落在库里而不在 `main.rs`：集成测试与下游可以直接调 [`run_from_args`]，
-//! 输出目标由调用方注入。
+//! 入口逻辑落在库里而不在 `main.rs`：集成测试与下游可以直接调 [`run_from_args`]
+//! （宿主目录可注入的形态是 [`run_from_args_with_host_dir`]），输出目标由调用方注入。
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -126,21 +126,32 @@ fn value<'a>(it: &mut impl Iterator<Item = &'a String>, flag: &str) -> Result<&'
 }
 
 /// 入口：解析参数并跑完一局（`argv` 含程序名；输出写入 `out`）
+///
+/// 覆盖层目录取约定值 [`CONFIG_DIR`]（当前目录）；要注入别的目录用
+/// [`run_from_args_with_host_dir`]。
 pub fn run_from_args(argv: &[String], out: &mut dyn Write) -> Result<()> {
+    run_from_args_with_host_dir(argv, out, Path::new(CONFIG_DIR))
+}
+
+/// 入口（**宿主目录可注入**）：覆盖层取 `host_dir` 下的同名文件
+///
+/// 桌面入口用约定值（当前目录）；测试与内嵌宿主注入自己的目录，从而在不污染运行目录的
+/// 前提下考「覆盖层合并 / 坏覆盖层报错」。
+pub fn run_from_args_with_host_dir(argv: &[String], out: &mut dyn Write, host_dir: &Path) -> Result<()> {
     let args = Args::parse(argv)?;
     if args.help {
         writeln!(out, "{}", Args::usage())?;
         return Ok(());
     }
-    run(&args, out)
+    run(&args, out, host_dir)
 }
 
 /// 按参数装配并跑完一局
-fn run(args: &Args, out: &mut dyn Write) -> Result<()> {
-    // 配置先于静态数据：两份 ai_config.toml 都在数据加载之外（默认层在数据根、覆盖层在当前目录）
-    let cfg = Config::load_with_overlay_file(&args.data_root, CONFIG_DIR)?;
+fn run(args: &Args, out: &mut dyn Write, host_dir: &Path) -> Result<()> {
+    // 配置先于静态数据：两份 ai_config.toml 都在数据加载之外（默认层在数据根、覆盖层在宿主目录）
+    let cfg = Config::load_with_overlay_file(&args.data_root, host_dir)?;
     init_logger(&cfg.output.log_level)?;
-    let overlay = Path::new(CONFIG_DIR).join(umaai::config::CONFIG_FILE);
+    let overlay = host_dir.join(umaai::config::CONFIG_FILE);
     if overlay.exists() {
         log::info!(
             "配置覆盖层: {}（默认层: {}）",
@@ -305,8 +316,8 @@ mod tests {
 
     /// 层1：选择器严格口径 —— 未知剧本 / 训练员报错并列出可用值，不静默兜底
     ///
-    /// 覆盖层没有命令行注入缝（约定文件在运行目录），故这里用文本入口
-    /// [`Config::parse`] 构造坏配置，直接考 [`build_game`] / [`build_trainer`]。
+    /// 层1 不起进程，故这里用配置层的文本入口 [`Config::parse`] 构造坏配置，直接考
+    /// [`build_game`] / [`build_trainer`]；覆盖层的宿主目录注入缝由端到端用例考。
     #[test]
     fn test_unknown_selectors_rejected() -> Result<()> {
         let base = std::fs::read_to_string(umaai_core::testing::data_root()?.join(umaai::config::CONFIG_FILE))?;

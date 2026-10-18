@@ -3,19 +3,19 @@
 本文件对照源码列出全部测试：按 crate 分节、按文件分小节、一行一条，便于定位用例与评估覆盖面。
 测试分层与判定口径的设计依据见 [`plan/miko_next_plan.md`](plan/miko_next_plan.md) 的「测试策略」节。
 
-口径（2026-10-17 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **251 passed / 0 failed / 3 ignored**；
-`cargo test --workspace --release -- --list` 共列出 **254 条**（253 个 `#[test]` + 1 个 doctest）。
+口径（2026-10-18 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **252 passed / 0 failed / 3 ignored**；
+`cargo test --workspace --release -- --list` 共列出 **255 条**（254 个 `#[test]` + 1 个 doctest）。
 
 | 层 | 位置 | 判定 | 条数 |
 |---|---|---|---|
 | L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 211 |
 | L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 26 |
-| L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 15 |
+| L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 16 |
 | L4 baseline | `crates/umaai-tests/tests/baseline.rs` + `crates/umaai-tests/baselines/*.json` | 比对后返回 `Err` / 非零退出码 | 1 |
 | 文档示例 | doctest | 标记 `ignore`，不执行 | 1 |
-| **合计** | | | **254** |
+| **合计** | | | **255** |
 
-- 分 crate：`umaai-core` 59 · `umasim` 53 · `umaai` 69 · `umaai-cli` 31 · `umaai-tools` 26 · `umaai-tests` 16。
+- 分 crate：`umaai-core` 59 · `umasim` 53 · `umaai` 69 · `umaai-cli` 31 · `umaai-tools` 26 · `umaai-tests` 17。
 - 默认跳过 3 条（需手动跑 `--ignored`）：`channel_watches_real_writes`（真 watcher 写入链路）、`session_runs_on_real_channel`（真通道收局）、`define_terminal_record` 的 doctest（标记 `ignore`）。
 
 ## 运行方式
@@ -99,7 +99,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - [umaai-tests (16)](#umaai-tests-16)
   - [`tests/basic_game.rs` (2)](#testsbasic_gamers-2)
   - [`tests/baseline.rs` (1)](#testsbaseliners-1)
-  - [`tests/cli_smoke.rs` (3)](#testscli_smokers-3)
+  - [`tests/cli_smoke.rs` (4)](#testscli_smokers-4)
   - [`tests/rule_streams.rs` (3)](#testsrule_streamsrs-3)
   - [`tests/runner_basic.rs` (1)](#testsrunner_basicrs-1)
   - [`tests/search_smoke.rs` (1)](#testssearch_smokers-1)
@@ -649,10 +649,11 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 - `baseline_matches_recorded` — 逐份跑基线并比对（含判定可红的反自证守门与份数下限），不一致即聚合返回 `Err`
 
-### `tests/cli_smoke.rs` (3)
+### `tests/cli_smoke.rs` (4)
 
 - `cli_full_game_smoke` — 验命令行装配链跑通一局、终局块成形且同参数输出逐字节一致
-- `cli_assembly_guards` — 守住入口：运行目录无覆盖层污染、缺数据根与未知参数均报错不兜底
+- `cli_assembly_guards` — 守住入口：运行目录无覆盖层污染、缺数据根与未知参数均报错不兜底（覆盖层宿主目录由用例注入）
+- `cli_overlay_from_injected_host_dir` — 验覆盖层只从注入的宿主目录读：坏覆盖层报错并点名选择器，换空目录同一参数正常跑完
 - `cli_verbosity_levels` — 验三档详细度各自成形：静默只留终局、详细到阶段
 
 ### `tests/runner_basic.rs` (1)
@@ -681,7 +682,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 ### `tests/tools_smoke.rs` (2)
 
 - `test_batch_and_probe` — 验跑批的逐局一致性与分布口径、探针的预算与候选对齐、同参数两次逐位一致
-- `test_entry_layer` — 验工具入口的子命令分发、机读行形状与基线校验路径（含未知子命令报错）
+- `test_entry_layer` — 验工具入口的子命令分发、机读行形状与基线校验路径（含未知子命令报错、注入宿主目录的坏覆盖层入口即报错）
 
 ## 维护约定
 
