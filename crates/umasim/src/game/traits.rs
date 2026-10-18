@@ -209,8 +209,8 @@ pub trait Game: Clone + TrainingValueSource {
     fn absent_rate_drop(&self) -> i32;
     /// 计算得意率，同时修改卡片计算状态所以要 mut
     ///
-    /// 不传 `Result`：函数体内无 fail 路径（`person_index < 6` 走计算返回 f32，
-    /// `>= 6` 返回 0.0）；与带防御性 Err 的 calc 系列形成分工。
+    /// 不传 `Result`：函数体内无 fail 路径（人头下标落在**卡组范围**内时走计算返回 f32，
+    /// 其余（理事长 / 追加人头 / 越界）返回 0.0）；与带防御性 Err 的 calc 系列形成分工。
     fn deyilv(&mut self, person_index: i32) -> f32;
     /// 团队卡是否可以闪彩，不考虑多个团卡的情况
     fn has_group_buff(&self) -> bool;
@@ -368,12 +368,30 @@ pub trait Game: Clone + TrainingValueSource {
     fn uma_mut(&mut self) -> &mut Uma;
     /// deck getter
     fn deck(&self) -> &Vec<SupportCard>;
+    /// provided: 按人头类型找第一个匹配的人头下标（理事长 / 记者这类非卡人头）
+    ///
+    /// 人头位置由各自的 `init_persons` 决定（基础局是「卡片人头在前、理事长随后」，
+    /// 剧本还可能追加自己的友人），**不要按固定下标取**：卡数一变下标就漂。
+    /// 找不到返回 `None`，调用方自行决定降级（不归属 / 跳过该事件）。
+    fn person_index_of_type(&self, ty: PersonType) -> Option<usize> {
+        self.persons().iter().position(|p| p.person_type() == ty)
+    }
+
+    /// provided: 按支援卡 `card_id` 找该卡人头在 `persons` 里的下标（[`Game::deck_index_of`] 的逆向）
+    ///
+    /// 卡组下标与人头下标**不保证相等**（非卡人头可以插在卡片之间），
+    /// 故跨容器一律按卡 ID 反查，不按下标对位。
+    fn person_index_of_card(&self, card_id: u32) -> Option<usize> {
+        self.persons().iter().position(|p| p.card_id() == Some(card_id))
+    }
+
     /// provided: 人头下标 → 卡组下标
     ///
     /// `persons` 与 `deck` 是两个平行容器，下标**不保证**一一对应
     /// （剧本友人卡可能推迟加入）。需要访问 `deck[..]` 时一律走本方法反查。
     ///
-    /// 前置条件：`deck` 内 `card_id` 唯一（重复卡静默命中第一张）。
+    /// 前置条件「`deck` 内 `card_id` 唯一」由构造期保证：`BaseGame::new` 按 `card_id`
+    /// 判重并拒绝重复卡组，故这里不会出现「重复卡静默命中第一张」。
     fn deck_index_of(&self, person_index: usize) -> Option<usize> {
         let cid = self.persons().get(person_index)?.card_id()?;
         self.deck().iter().position(|card| card.card_id == cid)

@@ -22,6 +22,13 @@
 `distribute_hint` / `at_trains` / `is_shining_at` / `shining_count` / `deck_index_of` / `count_training_persons`）/
 训练一族（`calc_training_buff` / `calc_training_value` / `calc_training_failure_rate` 与各自 `default_*`）。
 
+**人头定位纪律（剧本必读）**：`persons` 与 `deck` 是两个平行容器，**下标不保证相等**——剧本可以按自己的
+规则追加人头（剧本友人 / 记者 / NPC），追加后卡组下标与人头下标就错位。因此：
+
+- 找非卡人头用 `person_index_of_type(ty)`（理事长 / 记者这类），**不要写死下标**；
+- 由卡反查人头用 `person_index_of_card(card_id)`，由人头反查卡组槽位用 `deck_index_of(person_index)`；
+- 追加人头一律**排在卡片人头之后**（引擎的 `init_persons` 同序），这样按序对位的旧路径也不会错。
+
 `TrainingValueSource` 只一项：`training_basic_table()`（训练基础值表，数值是剧本资产）。
 
 ## 2. `Person` / `ActionEnum`

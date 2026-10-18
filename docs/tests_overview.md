@@ -3,19 +3,19 @@
 本文件对照源码列出全部测试：按 crate 分节、按文件分小节、一行一条，便于定位用例与评估覆盖面。
 测试分层与判定口径的设计依据见 [`plan/miko_next_plan.md`](plan/miko_next_plan.md) 的「测试策略」节。
 
-口径（2026-10-18 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **256 passed / 0 failed / 3 ignored**；
-`cargo test --workspace --release -- --list` 共列出 **259 条**（258 个 `#[test]` + 1 个 doctest）。
+口径（2026-10-18 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **297 passed / 0 failed / 3 ignored**；
+`cargo test --workspace --release -- --list` 共列出 **300 条**（299 个 `#[test]` + 1 个 doctest）。
 
 | 层 | 位置 | 判定 | 条数 |
 |---|---|---|---|
-| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 214 |
-| L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 26 |
-| L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 17 |
+| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 250 |
+| L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 27 |
+| L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 21 |
 | L4 baseline | `crates/umaai-tests/tests/baseline.rs` + `crates/umaai-tests/baselines/*.json` | 比对后返回 `Err` / 非零退出码 | 1 |
 | 文档示例 | doctest | 标记 `ignore`，不执行 | 1 |
-| **合计** | | | **259** |
+| **合计** | | | **300** |
 
-- 分 crate：`umaai-core` 59 · `umasim` 53 · `umaai` 69 · `umaai-cli` 31 · `umaai-tools` 29 · `umaai-tests` 18。
+- 分 crate：`umaai-core` 68 · `umasim` 57 · `umaai` 70 · `umaai-cli` 31 · `umaai-tools` 52 · `umaai-tests` 22。
 - 默认跳过 3 条（需手动跑 `--ignored`）：`channel_watches_real_writes`（真 watcher 写入链路）、`session_runs_on_real_channel`（真通道收局）、`define_terminal_record` 的 doctest（标记 `ignore`）。
 
 ## 运行方式
@@ -53,12 +53,12 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`src/gamedata/uma.rs` (3)](#srcgamedataumars-3)
   - [`src/race_mask.rs` (4)](#srcrace_maskrs-4)
   - [`src/rng.rs` (10)](#srcrngrs-10)
-  - [`src/stats.rs` (7)](#srcstatsrs-7)
+  - [`src/stats.rs` (16)](#srcstatsrs-16)
   - [`tests/data_load.rs` (6)](#testsdata_loadrs-6)
-- [umasim (53)](#umasim-53)
-  - [`src/game/base/basic.rs` (5)](#srcgamebasebasicrs-5)
+- [umasim (57)](#umasim-57)
+  - [`src/game/base/basic.rs` (8)](#srcgamebasebasicrs-8)
   - [`src/game/base/stage.rs` (2)](#srcgamebasestagers-2)
-  - [`src/game/base/mod.rs` (11)](#srcgamebasemodrs-11)
+  - [`src/game/base/mod.rs` (12)](#srcgamebasemodrs-12)
   - [`src/game/inherit.rs` (1)](#srcgameinheritrs-1)
   - [`src/game/stage.rs` (1)](#srcgamestagers-1)
   - [`src/game/support_card.rs` (4)](#srcgamesupport_cardrs-4)
@@ -69,7 +69,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`src/search/flat_search.rs` (13)](#srcsearchflat_searchrs-13)
   - [`src/search/result.rs` (3)](#srcsearchresultrs-3)
   - [`src/search/terminal.rs` (3)](#srcsearchterminalrs-3)
-- [umaai (69)](#umaai-69)
+- [umaai (70)](#umaai-70)
   - [`src/config/mod.rs` (8)](#srcconfigmodrs-8)
   - [`src/decision.rs` (4)](#srcdecisionrs-4)
   - [`src/luck.rs` (7)](#srcluckrs-7)
@@ -81,7 +81,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`tests/channel.rs` (3)](#testschannelrs-3)
   - [`tests/config.rs` (4)](#testsconfigrs-4)
   - [`tests/luck.rs` (4)](#testsluckrs-4)
-  - [`tests/protocol.rs` (6)](#testsprotocolrs-6)
+  - [`tests/protocol.rs` (7)](#testsprotocolrs-7)
   - [`tests/runner.rs` (3)](#testsrunnerrs-3)
 - [umaai-cli (31)](#umaai-cli-31)
   - [`src/render/term.rs` (5)](#srcrendertermrs-5)
@@ -91,14 +91,17 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`src/render/table.rs` (3)](#srcrendertablers-3)
   - [`src/frontend.rs` (5)](#srcfrontendrs-5)
   - [`src/cli.rs` (6)](#srcclirs-6)
-- [umaai-tools (29)](#umaai-tools-29)
+- [umaai-tools (52)](#umaai-tools-52)
   - [`src/baseline.rs` (9)](#srcbaseliners-9)
   - [`src/batch.rs` (5)](#srcbatchrs-5)
   - [`src/cli.rs` (7)](#srcclirs-7)
   - [`src/compare.rs` (3)](#srccomparers-3)
+  - [`src/arms.rs` (4)](#srcarmsrs-4)
+  - [`src/cardtest.rs` (4)](#srccardtestrs-4)
+  - [`src/deck.rs` (12)](#srcdeckrs-12)
   - [`src/probe.rs` (1)](#srcprobers-1)
   - [`src/report.rs` (4)](#srcreportrs-4)
-- [umaai-tests (18)](#umaai-tests-18)
+- [umaai-tests (22)](#umaai-tests-22)
   - [`tests/basic_game.rs` (2)](#testsbasic_gamers-2)
   - [`tests/baseline.rs` (1)](#testsbaseliners-1)
   - [`tests/cli_smoke.rs` (4)](#testscli_smokers-4)
@@ -107,7 +110,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`tests/search_smoke.rs` (1)](#testssearch_smokers-1)
   - [`tests/session_basic.rs` (2)](#testssession_basicrs-2)
   - [`tests/smoke.rs` (1)](#testssmokers-1)
-  - [`tests/tools_smoke.rs` (3)](#teststools_smokers-3)
+  - [`tests/tools_smoke.rs` (7)](#teststools_smokers-7)
 
 ---
 
@@ -222,7 +225,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 **局部流派生**
 - `test_fork_local_stream` — 父流只推进一次，同标记确定、异标记分离
 
-### `src/stats.rs` (7)
+### `src/stats.rs` (16)
 
 **切片式统计**
 - `test_mean_variance_stdev` — 均值、样本方差与标准差对手算样本成立
@@ -234,6 +237,19 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 **增量矩统计**
 - `test_moments_matches_slice_stats` — 与切片式均值、标准差口径一致
 - `test_moments_degenerate` — 退化样本取中性值，全等样本不出 NaN
+
+**配对差分（组卡 / 测卡工具用）**
+- `test_paired_hand_computed` — 增量均值、样本标准差、标准误、t 与置信半径对手算样本成立，胜 / 负 / 平计数正确
+- `test_paired_degenerate_and_symmetry` — 方向反转取负且胜负互换；单样本与全等样本取中性值且不判为越过零
+- `test_paired_rejects_bad_input` — 长度不一致与空样本报错，不静默截断
+- `test_paired_runs_for_effect` — 所需配对数按 80% 功效公式取值，退化输入取中性值
+
+**正态原语与多重比较校正（组卡 / 测卡工具用）**
+- `test_normal_cdf_and_quantile` — 分布函数与分位数对手算点成立、互为逆运算，端点给无穷、NaN 原样传出
+- `test_two_sided_p` — 双侧 p 值只取 `|t|`，1.96σ 给 0.05，无法判定取中性值 1
+- `test_correct_none` — 不校正档 `p_adj = p`、置信半径回到 1.96σ，且与入参逐位对齐
+- `test_correct_bonferroni` — α 除以族大小：同族变大后同一效应不再越过零、置信半径更宽；非法 α 退回默认档
+- `test_correct_holm` — step-down 校正 p 单调不减、档位按 p 升序生效、最大值封顶 1
 
 ### `tests/data_load.rs` (6)
 
@@ -247,16 +263,19 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_validate_rejects_broken_data` — 破坏关键表后被语义校验拒绝
 - `test_manifest_version_gate` — 清单版本与程序不一致时载入被拒
 
-## umasim (53)
+## umasim (57)
 
 本 crate 共 53 条 `src/**` 内联单元测试（`#[cfg(test)] mod tests`，逐条 `assert` 判定）。
 覆盖两个面：`game` 的规则数值口径（构造、继承、卡牌效果、状态位集、评分分量）与 `search` 的搜索契约（可复现、CRN 对齐、预算分配、入口守门）。
 
-### `src/game/base/basic.rs` (5)
+### `src/game/base/basic.rs` (8)
 
 **开局与端到端**
 - `test_newgame` — 冒烟：固定种子跑满全 78 回合，输出评分与 PT 供基线固化
 - `test_variable_deck_length` — 五张卡的短卡组也能构造并跑满整局，人数为卡数加理事长
+- `test_person_index_lookup` — 非卡人头按身份定位：理事长紧随卡片之后、记者按类型查，8 卡局里理事长落在第 9 位（不依赖固定下标）
+- `test_click_event_person_target` — 点击理事长 / 记者的事件归属按类型动态查（8 卡局里数据写死的 6/7 会指错人）
+- `test_friend_event_attribution` — 友人事件没带人头下标时按友人身份归属；故意把人头插到卡片之前使两套下标错位，仍命中友人并同步卡面羁绊
 
 **动作口径**
 - `test_friend_outing_steps` — 友人出行按段占用次数、未用段保留，并挂入待触发事件队列
@@ -268,7 +287,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_stage_sequence` — 六个阶段逐个推进且终点唯一，不可越阶或回退
 - `test_stage_ids` — 阶段编号与历史 CRN 阶段键逐一对齐，是外部记录的兼容口径
 
-### `src/game/base/mod.rs` (11)
+### `src/game/base/mod.rs` (12)
 
 **条件边界**
 - `test_can_self_race_bounds` — 自选比赛的回合窗口边界：第 13 回合开放、第 72 回合关闭
@@ -288,6 +307,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_take_put_roundtrip_keeps_progress` — 取出-放回保留推进过的 counter，不回退到起点
 - `test_rule_streams_ignore_decision_draws` — 规则流取值不受外部消耗次数影响
 - `test_apply_event_friend_bonus_integration` — 事件生效计入次数，带数值的友人事件确实入账
+- `test_duplicate_card_rejected` — 重复支援卡在构造期即拒绝：按 `card_id` 判重、点名两处槽位与 cardId，同卡不同突破档同样拒绝，正常卡组不受影响
 
 ### `src/game/inherit.rs` (1)
 
@@ -369,7 +389,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_no_terminal_is_zst` — 空终局记录与统计是零尺寸，不改变结果的尺寸
 - `define_terminal_record`（doctest，标记 `ignore` 不执行） — 文档示例：终局记录宏的剧本侧声明用法
 
-## umaai (69)
+## umaai (70)
 
 引擎 lib 的测试分两类：`src/**` 内联单元测试 48 条，用 `assert` 直查私有细节与纯函数；`tests/**` 集成测试 20 条，走真实数据根与真机帧夹具，经本地 `Checks` 逐条打印并聚合、失败返回 `Err`。
 关注面：配置解析的严格报错口径、运气分装配链、协议段解析与帧信道、决策基线取舍、Runner 端到端事件与可复现契约。
@@ -488,7 +508,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `luck_skip_unscored` — 跳过无评分决策，差值跨过该回合
 - `luck_epoch_and_serde` — 切局清零，快照与偏差序列化键齐全
 
-### `tests/protocol.rs` (6)
+### `tests/protocol.rs` (7)
 
 - `protocol_turn0` — 开局真实帧字段逐项落到局面底座
 - `protocol_turn13` — 事件帧还原关键事件与待处理事件
@@ -496,6 +516,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `protocol_final_frame` — 终局帧可解析并过三道闸，残留上一局帧被拒
 - `protocol_bad_frames` — 缺外壳、空段与字段改名必须报错
 - `protocol_event_skipped` — 事件数值缺失只跳过该事件并留痕
+- `protocol_duplicate_card_rejected` — 帧卡组含重复卡时构造期即拒绝（同卡同档与同卡不同档两种），原帧不受影响
 
 ### `tests/runner.rs` (3)
 
@@ -585,9 +606,9 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 **选择器口径**
 - `test_unknown_selectors_rejected` — 未知剧本 / 训练员经文本配置构造后报错并列出可用值
 
-## umaai-tools (29)
+## umaai-tools (52)
 
-本 crate 是开发工具件（跑批 / 探针 / 基线 / 对照），测试全部为内联单元测试：口径与边界用 `assert` 守门，跑局与搜索的端到端冒烟在 `umaai-tests/tests/tools_smoke.rs`。
+本 crate 是开发工具件（跑批 / 探针 / 基线 / 对照 / 组卡 / 测卡），测试全部为内联单元测试：口径与边界用 `assert` 守门，跑局、搜索、组卡与测卡的端到端冒烟在 `umaai-tests/tests/tools_smoke.rs`。
 集成测试不放本 crate（工具件依赖 `umaai-cli`，而 `umaai-tests` 反向依赖本 crate，端到端统一放测试 crate 一侧，避免依赖边打结）。
 
 ### `src/baseline.rs` (9)
@@ -607,6 +628,13 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_input_validate` — 拦住缺搜索段的固定根用例与非 1 局数的整局用例、空卡组
 - `test_run_case_rejects_old_schema` — 格式版本不符即拒绝
 
+### `src/arms.rs` (4)
+
+- `test_pairing_removes_common_noise` — 同种子配对把与种子有关的共同波动消掉，只留卡组差；同卡组给出零差分
+- `test_ranking` — 排序按配对增量降序，并列按卡组字典序
+- `test_guards` — 臂数与局数守卫；任一局失败即中断（异常局不补采）
+- `test_arm_stats_degenerate` — 单样本与空样本的均值 / 分位数取中性值，不 panic
+
 ### `src/batch.rs` (5)
 
 - `test_distribution` — 分布取自逐局评分，样本数与极值对齐
@@ -615,7 +643,14 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_spec_guards` — 跑批规格字段原样保留
 - `test_throughput_zero_elapsed` — 耗时为 0 时吞吐取 0，不产生无穷
 
-### `src/cli.rs` (7)
+### `src/cardtest.rs` (4)
+
+- `test_check_candidate` — 可比性判定：跨类型默认拒绝（文案点明构成效应）、显式放行、重复卡组拒绝、基准自身放行
+- `test_report_reference_lookup` — 报告能按标记取到基准卡那一行
+- `test_greedy_pairs` — 贪婪可放组合：只认同类型槽位、已占其他槽位的候选只留自证组合、跨类型开关放开全部槽位
+- `test_stop_names` — 贪婪停止原因的机读名（`no_improvement` / `steps_exhausted`）
+
+### `src/cli.rs` (10)
 
 - `test_parse_empty` — 无参数时只打用法，不选子命令
 - `test_parse_values` — 三个子命令的选项逐项取值正确，公共选项缺省值不受子命令影响
@@ -624,12 +659,30 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_stray_option_is_named` — 归属错误要指出具体是哪个选项并给用法提示
 - `test_help_prints_usage` — 帮助只打用法、不跑任何子命令
 - `test_join_and_token` — 五维用逗号连接，机读行的值内不出现空白
+- `test_deck_parse` — `deck` 逐项取值、三态排除名单（默认 / 覆盖 / 清空）与必带卡解析
+- `test_cardtest_parse` — `cardtest` 逐项取值（含可重复的 `--cards`、贪婪开关与校正口径）与必给选项 / 非法观测轴报错
+- `test_deck_correct_and_plan_rules` — 校正口径只认三档且只对 scan / all 有意义；`--plan` 与任何实验开关互斥、cardtest 不接计划
 
 ### `src/compare.rs` (3)
 
 - `test_plan_validate` — 计划自检：负回合坐标与零回合直接拒绝
 - `test_plan_serde_strict` — 计划 JSON 严格解析：拼错键与缺字段都报错，可选字段有缺省
 - `test_row_deltas` — 对照行差值按「探测 − 默认」计算（评分 / PT / 五维和）
+
+### `src/deck.rs` (12)
+
+- `test_panel_score` — 静态面板加权和按旧仓口径（友情×2 + 干劲×0.5 + 训练），分项取值正确
+- `test_compositions_counts` — 5 张训练卡无上限为 126 种构成、单类型 ≤3 为 101 种；必带卡占槽后构成数不变
+- `test_composition_legality_and_label` — 构成合计等于训练卡槽位数、种类下限被遵守、标签形如 `速2耐1智2`
+- `test_spec_validate` — 口径自检拦住越界突破档、重复槽位与越界槽位
+- `test_metric` — 观测轴解析与三种取值（score / pt / five）
+- `test_default_reference_deck` — 默认参考卡组为 5 张且无重复
+- `test_layout_reference_splices_fixed` — 必带卡插到指定槽位，训练卡按序填空位
+- `test_layout_reference_guards` — 布局拦住长度不匹配、低于引擎下限的过短卡组与重复卡
+- `test_order_and_assemble` — 按类型分组保持池内顺序；装配按构成取每类型前 N 张，卡序不足即报错
+- `test_stage_names` — 阶段名解析与机读名一一对应，错值报错
+- `test_plan_serde_strict` — 计划 JSON 严格解析：`stage` / `seed` 必给，拼错键、缺字段与非法阶段取值都报错
+- `test_plan_validate` — 计划自检拦住零局数 / 零候选数与不独立的选择-验证种子
 
 ### `src/probe.rs` (1)
 
@@ -642,9 +695,9 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_machine_line_is_splittable` — 切分后每段都是 `key=value`
 - `test_table_block_respects_width` — 表格宽度由调用方给出，窄宽度不产生超宽行
 
-## umaai-tests (18)
+## umaai-tests (22)
 
-本 crate 是跨 crate 集成与端到端测试的所在地，覆盖引擎编排、CLI 装配、会话协议、搜索、随机流分层与工具链六条链路。
+本 crate 是跨 crate 集成与端到端测试的所在地，覆盖引擎编排、CLI 装配、会话协议、搜索、随机流分层、工具链、组卡与测卡八条链路。
 集成测试不用 `assert`，统一经 `umaai-tests/src/lib.rs` 的 `Checker` 逐条打印 `ok` / `FAIL`、聚合失败项后返回 `Err`，保证 `cargo test` 有失败信号。
 共享夹具集中在 `umaai_tests::testing`：同一组马娘 / 卡组 / 继承 / 等级表与固定训练员，供直接调用、引擎 `Runner`、配置默认层与 CLI 对照。
 
@@ -687,11 +740,15 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 - `smoke` — 确认测试 crate 与工作区装配可用，输出冒烟标记即过
 
-### `tests/tools_smoke.rs` (3)
+### `tests/tools_smoke.rs` (7)
 
 - `test_batch_and_probe` — 验跑批的逐局一致性与分布口径、探针的预算与候选对齐、同参数两次逐位一致
 - `test_entry_layer` — 验工具入口的子命令分发、机读行形状与基线校验路径（含未知子命令报错、注入宿主目录的坏覆盖层入口即报错）
 - `test_compare` — 验分支对照的机读行与逐回合表、同参数两次逐位一致，探测动作越界与零回合计划都报错
+- `test_deck_tool` — 验组卡工具的构成枚举计数（126 / 101 / 21）、三态排除名单、必带卡占槽与拼进参考卡组、扫描机读行结构、参考卡零差分自证、未出榜类型与重复候选计数、多重比较校正（缺省不出校正列、Holm 出校正 CI 且不小于未校正）、同参数两次逐位一致（排除耗时），以及过短卡组 / 被排除的参考卡 / 不存在的必带卡 / 越界突破档 / 未开工阶段 / 陌生选项 / 空段 / 缺等号等守卫与参数自检
+- `test_cardtest_tool` — 验测卡工具的机读行结构、基准卡零差分自证、所需局数建议、多重比较校正（缺省 none 不出校正列、Bonferroni 出更宽校正 CI）、同参数两次逐位一致，以及跨类型 / 重复卡组 / 过短基准 / 槽位越界 / 未知候选 / 缺必给选项等守卫
+- `test_cardtest_greedy` — 验逐槽贪婪：逐步机读行与步数一致、停止原因点名、最后一步组合排行留证、替换只落在同类型槽位、同参数两次逐位一致，以及重复候选 / 零步数上限 / 无可放组合三种守卫
+- `test_deck_plan` — 验自持实验计划：计划驱动 compose 与 scan（路径回显、实验变量与校正口径生效）、计划与任何实验开关互斥、同计划两次逐位一致，以及拼错键 / 缺 seed / 零局数 / 阶段与校正不搭 / cardtest 不接计划等报错
 
 ## 维护约定
 

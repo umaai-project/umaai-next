@@ -172,9 +172,11 @@ pub struct BaseStatus {
     /// 是否锁定到某个训练
     pub locked_training_id: i32,
     /// 理事长羁绊（非卡人头，由剧本侧使用）
+    /// 理事长羁绊（**未接线**：当前还原路径不消费非卡人头状态，保留字段以备接入）
     #[serde(rename = "friendship_noncard_yayoi")]
     pub friendship_noncard_yayoi: i32,
     /// 记者羁绊（非卡人头，由剧本侧使用）
+    /// 记者羁绊（**未接线**，同理事长字段）
     #[serde(rename = "friendship_noncard_reporter")]
     pub friendship_noncard_reporter: i32,
     /// 友人阶段（0 未点击 / 1 已点击未出行 / 2 已出行 / 其它 = 离开）
@@ -290,12 +292,13 @@ impl BaseStatus {
 
     /// 帧字段 → 友人状态（按剧本友人卡定位；未带该卡时返回默认空状态）
     ///
-    /// 出行段数越界（协议给出 >5）时只取前 5 段，不 panic。
+    /// 出行段数越界（协议给出 >5）时只取前 5 段，不 panic。帧里的卡组位置**不进状态**：
+    /// 友人状态只记身份（`card_id`），人头位置在宿主建完人头后按身份反查。
     pub fn to_friend(&self, friend_chara_id: u32) -> Result<FriendState> {
-        for (index, id) in self.card_id.iter().enumerate() {
+        for id in &self.card_id {
             let card = umasim::game::SupportCard::new(*id)?;
             if card.card_type >= 5 && card.data.chara_id == friend_chara_id {
-                let mut friend = FriendState::new(Some(*id), index)?;
+                let mut friend = FriendState::new(Some(*id))?;
                 friend.out_state = match self.friend_stage {
                     0 => FriendOutState::UnClicked,
                     1 => FriendOutState::BeforeUnlock,

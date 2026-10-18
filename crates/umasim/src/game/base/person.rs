@@ -45,6 +45,9 @@ impl BasePerson {
     }
 
     /// 理事长人头
+    ///
+    /// `person_index` 只是占位：加入时由 `BasicGame::add_person` 按加入顺序重编号
+    /// （卡片人头在前、非卡人头在后，见 `init_persons`），不表示固定槽位。
     pub fn yayoi() -> Self {
         BasePerson {
             person_index: 6,
@@ -57,7 +60,9 @@ impl BasePerson {
         }
     }
 
-    /// 记者人头
+    /// 记者人头（当前无调用者：基础局不加入记者）
+    ///
+    /// `person_index` 同 [`BasePerson::yayoi`]，是占位、加入时重编号。
     pub fn reporter() -> Self {
         BasePerson {
             person_index: 7,

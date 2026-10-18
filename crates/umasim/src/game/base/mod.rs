@@ -160,10 +160,12 @@ impl BaseGame {
 
     /// 建立游戏对象
     ///
-    /// `deck_ids` 长度不固定（剧本的卡组约定可能不同），由调用方保证合法性；
-    /// `limit_base` 由调用的剧本提供（见 [`Uma::new`]）；`race_grades` 为比赛
-    /// 等级表（配置层注入）。构造顺序是**先写剧本基值、再加继承**；任何剧本
-    /// 都不得在本函数返回后整体赋值 `five_status_limit`，那会擦掉已累加的
+    /// `deck_ids` 长度不固定（剧本的卡组约定可能不同），但**同一张卡不得占两个槽位**：
+    /// 按 `card_id` 判重（同卡不同突破档也算重复），构造期即拒绝——重复卡会让人头反查
+    /// （`deck_index_of`）的两张人头都命中第一张，羁绊与红点静默写到错槽位；
+    /// 其余合法性由调用方保证。`limit_base` 由调用的剧本提供（见 [`Uma::new`]）；
+    /// `race_grades` 为比赛等级表（配置层注入）。构造顺序是**先写剧本基值、再加继承**；
+    /// 任何剧本都不得在本函数返回后整体赋值 `five_status_limit`，那会擦掉已累加的
     /// 开局继承增量。
     pub fn new(
         uma_id: u32,
@@ -175,11 +177,20 @@ impl BaseGame {
         let mut uma = Uma::new(uma_id, limit_base, race_grades)?;
         let mut deck = vec![];
         let mut friend_id = None;
-        let mut friend_index = 0;
         let mut card_type_count = [0; 7];
         // 支援卡
+        let mut first_slot: HashMap<u32, usize> = HashMap::new();
         for (index, id) in deck_ids.iter().enumerate() {
             let card = SupportCard::new(*id)?;
+            if let Some(first) = first_slot.insert(card.card_id, index) {
+                anyhow::bail!(
+                    "卡组含重复支援卡: {}（cardId {}）——第 {} 槽与第 {} 槽是同一张卡，同一张卡不能占两个槽位",
+                    card.data.short_name(),
+                    card.card_id,
+                    first,
+                    index
+                );
+            }
             // 初始属性
             let initial = card.initial_bonus();
             let race_bonus = card.effect.saihou;
@@ -187,10 +198,9 @@ impl BaseGame {
             uma.five_status.add_eq(initial);
             uma.skill_pt += pt;
             uma.race_bonus += race_bonus;
-            // 友人. 暂时不处理多个友人
+            // 友人. 暂时不处理多个友人（多张时取最后一张，见 rules §4.1）
             if card.card_type >= 5 {
                 friend_id = Some(*id);
-                friend_index = index;
             }
             // 记录训练类型
             if card.card_type < 7 {
@@ -225,7 +235,7 @@ impl BaseGame {
             uma,
             deck,
             inherit,
-            friend: FriendState::new(friend_id, friend_index)?,
+            friend: FriendState::new(friend_id)?,
             train_level_count: [0; 5],
             distribution: vec![],
             events: HashMap::new(),
@@ -290,6 +300,22 @@ impl BaseGame {
         } else {
             None
         }
+    }
+
+    /// 事件应归属的人头下标
+    ///
+    /// 规则：事件自带 `person_index` 优先（生成时已按身份定位）；没带且是**友人事件**
+    /// （`friend_event_ids` 之一）时，用友人的 `card_id` 在 `persons` 里反查——
+    /// 卡组下标与人头下标不保证相等，故一律按身份查，不按下标对位。查不到就不归属。
+    pub fn event_person_target<P: crate::game::Person>(&self, event: &EventData, persons: &[P]) -> Option<usize> {
+        if let Some(index) = event.person_index {
+            return usize::try_from(index).ok();
+        }
+        if !self.friend_event_ids.contains(&event.id) {
+            return None;
+        }
+        let card_id = self.friend.card_id?;
+        persons.iter().position(|person| person.card_id() == Some(card_id))
     }
 
     /// 对 ActionValue 应用友人卡词条 bonus 乘算
@@ -386,6 +412,28 @@ mod tests {
             Data::get()?.consts.five_status_limit_base,
             &RACE_GRADES,
         )
+    }
+
+    /// 层1：重复支援卡在构造期即拒绝（按 `card_id` 判重，同卡不同突破档也算重复）
+    #[test]
+    fn test_duplicate_card_rejected() -> Result<()> {
+        Data::init(data_root()?)?;
+        let limit = Data::get()?.consts.five_status_limit_base;
+        let build = |cards: &[u32]| BaseGame::new(101901, cards, InheritInfo::default(), limit, &RACE_GRADES);
+
+        let err = build(&[302424, 302464, 302424]).expect_err("同一张卡占两槽应拒绝");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("重复支援卡"), "错误要点名重复支援卡: {msg}");
+        assert!(msg.contains("第 0 槽与第 2 槽"), "错误要点名两处槽位: {msg}");
+        assert!(msg.contains("30242"), "错误要点名 cardId: {msg}");
+        // 同卡不同突破档（idrank 302424 与 302423 是同一张卡）同样拒绝
+        assert!(build(&[302424, 302423, 302464]).is_err(), "同卡不同突破档也算重复");
+        // 正常卡组不受影响
+        assert!(
+            build(&[302424, 302464, 302484, 302564, 302574, 302644]).is_ok(),
+            "无重复卡组应正常构造"
+        );
+        Ok(())
     }
 
     /// 层1：自选比赛回合边界

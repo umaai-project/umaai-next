@@ -617,7 +617,8 @@ mod tests {
 
         // 随机数仅用于本测试的 seed 演示位（保持文件自包含）
         let _ = StdRng::seed_from_u64(42);
-        let _ = FriendState::new(None, 0)?; // 顺带冒烟：无友人卡路径
+        let friend = FriendState::new(None)?; // 顺带冒烟：无友人卡路径
+        assert_eq!(friend.card_id, None, "无友人卡时不记身份");
         Ok(())
     }
 }

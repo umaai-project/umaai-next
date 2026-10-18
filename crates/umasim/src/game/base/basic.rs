@@ -175,8 +175,8 @@ impl BasicAction {
             let extra_train_prob = Data::get()?.event_prob("extra_train")?;
             if !game.is_xiahesu() && rng.random_bool(extra_train_prob) {
                 let mut event = extra_training_event(train)?;
-                // 动态设置理事长索引
-                if let Some(yayoi_index) = game.persons.iter().position(|p| p.person_type == PersonType::Yayoi) {
+                // 理事长位置按类型动态查（与点击事件同法）
+                if let Some(yayoi_index) = game.person_index_of_type(PersonType::Yayoi) {
                     event.person_index = Some(yayoi_index as i32);
                 }
                 game.unresolved_events.push(event);
@@ -186,24 +186,30 @@ impl BasicAction {
                 match game.friend.out_state {
                     FriendOutState::UnClicked => {
                         game.friend.out_state = FriendOutState::BeforeUnlock;
-                        let mut event = Data::get()?.events.friend_events["first"].clone();
-                        event.person_index = Some(game.friend.person_index as i32); // 设置增加羁绊的目标为友人
+                        // 归属在结算时按友人身份定位（`apply_event`），这里不塞下标
+                        let event = Data::get()?.events.friend_events["first"].clone();
                         game.unresolved_events.push(event);
                     }
                     _ => {
-                        let mut event = Data::get()?.events.friend_events["click"].clone();
-                        event.person_index = Some(game.friend.person_index as i32);
+                        let event = Data::get()?.events.friend_events["click"].clone();
                         game.unresolved_events.push(event);
                     }
                 }
             }
             if yayoi_clicked {
-                game.unresolved_events
-                    .push(Data::get()?.system_event("yayoi_click")?.clone());
+                let mut event = Data::get()?.system_event("yayoi_click")?.clone();
+                // 归属人头按类型动态定位：位置随卡数走，不用数据里的固定下标
+                if let Some(index) = game.person_index_of_type(PersonType::Yayoi) {
+                    event.person_index = Some(index as i32);
+                }
+                game.unresolved_events.push(event);
             }
             if reporter_clicked {
                 let mut event = Data::get()?.system_event("reporter_click")?.clone();
                 event.choices[0][0].value.status_pt[train] = 2;
+                if let Some(index) = game.person_index_of_type(PersonType::Reporter) {
+                    event.person_index = Some(index as i32);
+                }
                 game.unresolved_events.push(event);
             }
         }
@@ -347,6 +353,15 @@ impl BasicGame {
             .map(|master| StrategyRng::new(derive_seed(master, &[turn, StreamTag::Strategy.tag()])));
     }
 
+    /// 友人的人头下标（按友人卡的 `card_id` 反查）
+    ///
+    /// 没带友人、或人头还没建（`init_persons` 之前）时为 `None`。
+    /// 卡组下标与人头下标不保证相等，故一律按身份反查，不按下标对位。
+    #[must_use]
+    pub fn friend_person_index(&self) -> Option<usize> {
+        self.friend.card_id.and_then(|id| self.person_index_of_card(id))
+    }
+
     /// 增加羁绊（爱娇的全局 +2 统一在此施加；同步支援卡面羁绊；上限 100）
     pub fn add_friendship(&mut self, person_index: usize, value: i32) {
         if person_index < self.persons.len() {
@@ -358,8 +373,9 @@ impl BasicGame {
             };
             let new_value = (self.persons[person_index].friendship + value).min(100);
             self.persons[person_index].friendship = new_value;
-            if person_index < self.deck.len() {
-                self.deck[person_index].friendship = new_value;
+            // 卡面羁绊同步：人头下标 ≠ 卡组下标，按 card_id 反查槽位
+            if let Some(slot) = self.deck_index_of(person_index) {
+                self.deck[slot].friendship = new_value;
             }
         }
     }
@@ -475,7 +491,9 @@ impl Game for BasicGame {
             // 否则如果是允许发生随机事件的回合
             // 先判断友人出门事件
             if self.friend.out_state == FriendOutState::BeforeUnlock {
-                let friendship = self.persons[self.friend.person_index].friendship;
+                let friendship = self
+                    .friend_person_index()
+                    .map_or(0, |index| self.persons[index].friendship);
                 let out_prob = if friendship < 60 {
                     data.event_prob("friend_unlock_low")
                 } else {
@@ -558,10 +576,10 @@ impl Game for BasicGame {
     /// 使事件生效（无选项）。修改羁绊和特殊事件的部分需要在当前类型里完成
     fn apply_event(&mut self, event: &EventData, choice: usize, rng: &mut impl Rng) -> Result<()> {
         if let Some(result) = self.base.apply_event(event, choice, rng)
-            && let Some(person_index) = &event.person_index
             && result.value.friendship != 0
+            && let Some(person_index) = self.base.event_person_target(event, self.persons())
         {
-            self.add_friendship(*person_index as usize, result.value.friendship);
+            self.add_friendship(person_index, result.value.friendship);
         }
         // 判断特殊事件
         match event.id {
@@ -773,6 +791,121 @@ mod tests {
         let before = game.persons[0].friendship;
         game.add_friendship(0, -3);
         assert_eq!(game.persons[0].friendship, before - 3, "负向扣减不加爱娇");
+        Ok(())
+    }
+
+    /// 层1：非卡人头按身份定位——位置随卡数走，不依赖固定下标
+    #[test]
+    fn test_person_index_lookup() -> Result<()> {
+        Data::init(data_root()?)?;
+        // 6 张（含第 5 槽的友人卡）：人头 = 6 卡 + 理事长
+        let game = BasicGame::newgame(
+            101901,
+            &[302424, 302464, 302484, 302564, 302574, 302644],
+            InheritInfo::default(),
+            &RACE_GRADES,
+        )?;
+        assert_eq!(
+            game.person_index_of_type(PersonType::Yayoi),
+            Some(6),
+            "理事长紧随卡片之后"
+        );
+        assert_eq!(game.person_index_of_type(PersonType::Reporter), None, "基础局没有记者");
+        let friend = game.friend.card_id.expect("夹具含友人卡");
+        assert_eq!(friend, 30257);
+        assert_eq!(game.person_index_of_card(friend), Some(4), "友人卡在第 5 槽");
+        assert_eq!(game.friend_person_index(), Some(4));
+
+        // 8 张：理事长下标跟着卡数走（写死 6 就会指到第 7 张卡）
+        let wide = BasicGame::newgame(
+            101901,
+            &[302424, 302464, 302484, 302564, 302574, 302644, 302704, 302974],
+            InheritInfo::default(),
+            &RACE_GRADES,
+        )?;
+        assert_eq!(wide.deck.len(), 8);
+        assert_eq!(wide.persons.len(), 9, "8 卡 + 理事长");
+        assert_eq!(wide.person_index_of_type(PersonType::Yayoi), Some(8));
+        // 追加记者（剧本形态）后同样按类型查
+        let mut with_reporter = wide.clone();
+        with_reporter.add_person(BasePerson::reporter());
+        assert_eq!(with_reporter.person_index_of_type(PersonType::Reporter), Some(9));
+        Ok(())
+    }
+
+    /// 层1：点击事件的归属按类型动态查——8 卡局里理事长在第 9 位，数据里写死的 6 是错的
+    #[test]
+    fn test_click_event_person_target() -> Result<()> {
+        Data::init(data_root()?)?;
+        let mut game = BasicGame::newgame(
+            101901,
+            &[302424, 302464, 302484, 302564, 302574, 302644, 302704, 302974],
+            InheritInfo::default(),
+            &RACE_GRADES,
+        )?;
+        game.set_rule_master(42);
+        game.add_person(BasePerson::reporter());
+        let yayoi = game.person_index_of_type(PersonType::Yayoi).expect("应有理事长");
+        let reporter = game.person_index_of_type(PersonType::Reporter).expect("应有记者");
+        assert_eq!((yayoi, reporter), (8, 9), "非卡人头位于卡片之后、按加入顺序");
+
+        // 只把目标人头放进 0 号训练位（其余清空）：点击事件由「该训练位上的人头类型」触发
+        game.base.distribution = vec![Vec::new(); 5];
+        game.base.distribution[0] = vec![yayoi as i32, reporter as i32];
+        game.uma.vital = 100;
+        game.uma.motivation = 5;
+
+        let train = BasicAction(BaseAction::Train(0));
+        let mut seen = (None, None);
+        for seed in 0..128_u64 {
+            let mut trial = game.clone();
+            trial.unresolved_events.clear();
+            train.do_train(&mut trial, 0, &mut StdRng::seed_from_u64(seed))?;
+            for event in &trial.unresolved_events {
+                if event.id == 901 {
+                    seen.0 = event.person_index;
+                }
+                if event.id == 902 {
+                    seen.1 = event.person_index;
+                }
+            }
+            if seen.0.is_some() && seen.1.is_some() {
+                break;
+            }
+        }
+        assert_eq!(seen.0, Some(yayoi as i32), "点击理事长的归属应是实际人头下标");
+        assert_eq!(seen.1, Some(reporter as i32), "点击记者的归属应是实际人头下标");
+        Ok(())
+    }
+
+    /// 层1：友人事件没带 `person_index` 时按友人身份归属（`out` / `newyear` 的羁绊不再丢）
+    #[test]
+    fn test_friend_event_attribution() -> Result<()> {
+        Data::init(data_root()?)?;
+        let game = BasicGame::newgame(
+            101901,
+            &[302424, 302464, 302484, 302564, 302574, 302644],
+            InheritInfo::default(),
+            &RACE_GRADES,
+        )?;
+        let event = Data::get()?.events.friend_events["out"].clone();
+        assert!(event.person_index.is_none(), "夹具事件本身不带人头下标");
+
+        // 人为在卡片之前插入一个人头，模拟「剧本先加自己人头」的布局：
+        // 卡组下标与人头下标就此错位，按身份反查仍要命中友人
+        let mut shifted = game.clone();
+        shifted.persons.insert(0, BasePerson::yayoi());
+        let friend_index = shifted.friend_person_index().expect("按身份仍能反查到友人");
+        assert_eq!(friend_index, 5, "友人卡在第 5 槽，错位后人头下标是 5（卡组下标仍是 4）");
+        let before = shifted.persons[friend_index].friendship;
+        shifted.set_rule_master(42);
+        shifted.apply_event(&event, 0, &mut StdRng::seed_from_u64(7))?;
+        let after = shifted.persons[friend_index].friendship;
+        assert!(after > before, "友人事件应记到友人头上: {before} -> {after}");
+        assert_eq!(
+            shifted.deck[4].friendship, after,
+            "卡面羁绊按 card_id 反查同步到第 5 槽"
+        );
         Ok(())
     }
 

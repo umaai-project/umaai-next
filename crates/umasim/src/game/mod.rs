@@ -79,8 +79,12 @@ pub struct FriendState {
     pub out_used: Vec<bool>,
     /// 团队卡Buff已经持续几回合，0为未开启
     pub group_buff_turn: u32,
-    /// 友人在Persons中是哪一个
-    pub person_index: usize,
+    /// 友人卡的 `card_id`（没带友人时为 `None`）
+    ///
+    /// **不存人头下标**：人头与卡组是两个平行容器、下标不保证相等（剧本可能把自己的人头
+    /// 插在卡片之间），要取友人的人头位置请在构造完 `persons` 后按本字段用
+    /// `Game::person_index_of_card` 反查。
+    pub card_id: Option<u32>,
     /// 友人事件体力回复量加成
     pub vital_bonus: i32,
     /// 友人事件效果加成
@@ -137,7 +141,9 @@ impl FriendState {
     /// 由友人卡的 `idrank`（`id * 10 + rank`）构造出行状态
     ///
     /// `idrank` 为 `None` 表示没带友人卡。`rank > 4` 视为非法输入。
-    pub fn new(idrank: Option<u32>, index: usize) -> Result<Self> {
+    /// 只记**身份**（`card_id`），不记人头下标：人头位置由各剧本的 `init_persons` 决定，
+    /// 用的时候按 `card_id` 反查（见 [`FriendState::card_id`]）。
+    pub fn new(idrank: Option<u32>) -> Result<Self> {
         let data = Data::get()?;
         let mut ret = FriendState {
             out_used: vec![false; 5],
@@ -149,6 +155,7 @@ impl FriendState {
                 return Err(anyhow!("idrank {i} 非法"));
             }
             let card = data.get_card(id)?;
+            ret.card_id = Some(id);
             ret.card_state = match card.rarity {
                 3 => FriendCardState::SSR,
                 _ => FriendCardState::R,
@@ -156,7 +163,6 @@ impl FriendState {
             ret.vital_bonus = card.card_value[rank as usize].event_recovery_amount_up;
             ret.event_bonus = card.card_value[rank as usize].event_effect_up;
         }
-        ret.person_index = index;
         Ok(ret)
     }
 }
@@ -170,10 +176,10 @@ mod tests {
     #[test]
     fn test_friend() -> Result<()> {
         Data::init(data_root()?)?;
-        let friend = FriendState::new(Some(302574), 3)?;
+        let friend = FriendState::new(Some(302574))?;
         // 302574 → id 30257, rank 4；rarity 3 → SSR
         assert_eq!(friend.card_state, FriendCardState::SSR);
-        assert_eq!(friend.person_index, 3);
+        assert_eq!(friend.card_id, Some(30257), "只记身份，不记人头下标");
         assert_eq!(friend.out_used.len(), 5);
         // rank 4 的加成字段取自卡面（非零才说明真的读到了表）
         println!("friend: {friend:?}");

@@ -243,6 +243,7 @@ miko_next/
 | **P6e′** | 随机流分层升格为通用机制：决策流 / 局面流 / 事件流分开，剧本轴留剧本；删外挂 CRN | ✅ 已完成（core 已有原语接进计算层；守门用例见下方 P6e′ 执行定稿） |
 | **P6d′** | `umaai-tools` 分支推进对照（复盘用：同根两分支推进 n 回合比差别） | ✅ 已完成（`umaai-tools compare`：JSON 对照计划 + 单探测动作 vs 默认一选；见下方 P6d′ 执行定稿） |
 | **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | ✅ 已完成（模板 `templates/umaai-scenario/`〔独立包，CI 单独 check〕；文档 `docs/scenario/`；见下方 P7′ 执行定稿） |
+| **P8′** | 组卡 / 测卡工具（通用层）：`umaai-core` 配对统计原语 + `umaai-tools` 的 `deck` / `arms` / `cardtest` 内核与 `deck` / `cardtest` 子命令（逐类型实测扫描优先 + 自持实验计划 + 逐槽贪婪 + 多重比较校正）；精确排序归剧本仓 | P8a′ / P8c′ 已落地（P8b′ 待剧本仓）；方案定稿见 [`tools_deck_cardtest.md`](tools_deck_cardtest.md) |
 
 ### P4′ 执行定稿（2026-10-17 拍板）
 

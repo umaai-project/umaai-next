@@ -111,8 +111,8 @@ impl BaseAction {
             which += 1;
         }
         if which < 5 {
-            let mut event = Data::get()?.events.friend_events[&(1 + which).to_string()].clone();
-            event.person_index = Some(game.friend.person_index as i32);
+            // 归属在结算时按友人身份定位（`BasicGame::apply_event`）：动作层拿不到人头容器
+            let event = Data::get()?.events.friend_events[&(1 + which).to_string()].clone();
             game.friend.out_used[which] = true;
             game.unresolved_events.push(event);
             Ok(())

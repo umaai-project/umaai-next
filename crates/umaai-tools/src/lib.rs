@@ -8,6 +8,9 @@
 //! - [`probe`]：固定根搜索成本探针（首个训练决策点，量预算与单点耗时）。
 //! - [`baseline`]：基线 JSON 的模型 / 跑法 / 比对 / 读写；判定壳在 `umaai-tests`。
 //! - [`compare`]：分支推进对照（复盘用：JSON 回合坐标 + 单探测动作 vs 默认一选）。
+//! - [`deck`]：组卡工具内核（卡池筛选 / 静态面板分 / 构成枚举 / 逐类型实测扫描 / 排序）。
+//! - [`arms`]：多臂同种子配对跑批内核（测量函数闭包注入，剧本仓可复用手写训练员）。
+//! - [`cardtest`]：测卡工具内核（固定基准卡组、只换一槽，显式候选列表）。
 //! - [`report`]：输出原语（机读单行 + 人读面板与表格），复用 `umaai-cli` 的呈现件。
 //! - [`cli`]：入口逻辑（参数解析 + 子命令分发），bin 只收参数与给退出码。
 //!
@@ -16,10 +19,13 @@
 //! 当前只出机读单行与 stdout 摘要。
 #![warn(missing_docs)]
 
+pub mod arms;
 pub mod baseline;
 pub mod batch;
+pub mod cardtest;
 pub mod cli;
 pub mod compare;
+pub mod deck;
 pub mod probe;
 pub mod report;
 mod setup;

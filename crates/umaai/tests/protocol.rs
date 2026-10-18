@@ -246,3 +246,41 @@ fn protocol_event_skipped() -> Result<()> {
     println!("跳过事件: {:?}", out.notes);
     c.finish()
 }
+
+/// 帧卡组含重复卡：构造期即拒绝（帧是外部输入，重复卡必须被看见）
+#[test]
+fn protocol_duplicate_card_rejected() -> Result<()> {
+    let mut c = Checks::new("协议帧重复卡守卫");
+    let cfg = setup()?;
+    let status = parse_base_status(TURN0)?;
+    c.check(status.card_id.len() == 6, "夹具卡组六张");
+    let mut ids: Vec<u32> = status.card_id.iter().map(|id| id / 10).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    c.check(ids.len() == status.card_id.len(), "夹具卡组本身无重复卡");
+
+    // 第 3 槽改成与第 0 槽完全同卡
+    let mut dup = status.clone();
+    dup.card_id[3] = dup.card_id[0];
+    let err = dup
+        .to_base_game(&params(&cfg)?)
+        .err()
+        .map(|e| format!("{e:#}"))
+        .unwrap_or_default();
+    c.check(err.contains("重复支援卡"), &format!("同卡同档应拒绝: {err}"));
+    c.check(err.contains("cardId"), &format!("错误要点名 cardId: {err}"));
+
+    // 同卡不同突破档（cardId 相同、idrank 不同）同样拒绝
+    let mut dup_rank = status.clone();
+    dup_rank.card_id[3] = (dup_rank.card_id[0] / 10) * 10 + 3;
+    let err = dup_rank
+        .to_base_game(&params(&cfg)?)
+        .err()
+        .map(|e| format!("{e:#}"))
+        .unwrap_or_default();
+    c.check(err.contains("重复支援卡"), &format!("同卡不同档应拒绝: {err}"));
+
+    // 原帧照常构造
+    c.check(status.to_base_game(&params(&cfg)?).is_ok(), "原帧不受影响");
+    c.finish()
+}
