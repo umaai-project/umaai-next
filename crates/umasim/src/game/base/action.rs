@@ -49,29 +49,12 @@ impl Display for BaseAction {
 // 不能使用 Game trait 里计算训练数值的方法。
 impl BaseAction {
     /// 比赛动作（生涯 / 自选；事件面板乘算比赛加成）
+    ///
+    /// 事件构造与缩放统一走 [`BaseGame::push_race_event`]：默认系数即
+    /// `(100 + race_bonus) / 100`，剧本可用同一入口传自己的实际系数。
     pub fn do_race(game: &mut BaseGame, _rng: &mut impl Rng) -> Result<()> {
-        let race_bonus = (100 + game.uma.race_bonus) as f32 / 100.0;
-        if game.uma.is_race_turn(game.turn) {
-            let mut event = Data::get()?.system_event("race_career")?.clone();
-            // 事件面板乘算比赛加成
-            event.map_status(|x| (x as f32 * race_bonus).round() as i32);
-            game.unresolved_events.push(event);
-            game.uma.set_race(game.turn);
-        } else {
-            // URA 回合（72-77）自选比赛固定 G1：race_grades 表仅覆盖回合 0-71
-            let grade = if game.turn >= 72 {
-                4
-            } else {
-                game.race_grades[game.turn as usize]
-            };
-            let event_name = format!("race_g{grade}");
-            let mut event = Data::get()?.system_event(&event_name)?.clone();
-            // 事件面板乘算比赛加成
-            event.map_status(|x| (x as f32 * race_bonus).round() as i32);
-            game.unresolved_events.push(event);
-            game.uma.set_race(game.turn);
-        }
-        Ok(())
+        let scale = (100 + game.uma.race_bonus) as f64 / 100.0;
+        game.push_race_event(scale, 1.0)
     }
 
     /// 休息动作（小合宿固定 +40 体 +1 干劲；平时按分布抽 +30/+50/+70）

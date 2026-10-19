@@ -92,6 +92,9 @@ impl Person for BasePerson {
     fn set_hint(&mut self, hint: bool) {
         self.is_hint = hint;
     }
+    fn set_friendship(&mut self, friendship: i32) {
+        self.friendship = friendship;
+    }
     fn hint(&self) -> bool {
         self.is_hint
     }

@@ -19,6 +19,7 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
 use anyhow::{Context, Result, anyhow, bail};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use umasim::{game::InheritInfo, search::SearchConfig};
 
@@ -131,13 +132,7 @@ impl Config {
 
     /// 解析 TOML 文本（默认层 + 可选覆盖层文本），供内嵌 / 测试场景复用
     pub fn parse(base_toml: &str, overlay_toml: Option<&str>) -> Result<Self> {
-        let mut cfg: Config = toml::from_str(base_toml).context("解析默认配置失败")?;
-        if let Some(text) = overlay_toml {
-            let overlay: Overlay = toml::from_str(text).context("解析覆盖配置失败")?;
-            overlay.apply(&mut cfg);
-        }
-        cfg.validate()?;
-        Ok(cfg)
+        parse_with_overlay(base_toml, overlay_toml)
     }
 
     /// 按 `sim.race_grades` 的名字取比赛等级表
@@ -205,15 +200,61 @@ impl Config {
     }
 }
 
+/// 「默认层 + 覆盖层」两段式配置的通用接口
+///
+/// 引擎 [`Config`] 与剧本仓的专属配置段共用同一套语义：
+/// - 默认层字段齐全（唯一真源），**未知键严格报错**；
+/// - 覆盖层与默认层同构、字段全 `Option`，段缺失整段沿用；
+/// - 合并后再统一校验。
+///
+/// 实现方只需给出覆盖层类型与合并逻辑，解析 / 报错口径由 [`parse_with_overlay`] 统一。
+pub trait OverlayConfig: Sized + DeserializeOwned {
+    /// 覆盖层类型：与默认层同构、字段全 `Option`
+    type Overlay: DeserializeOwned;
+
+    /// 把覆盖层合并到自身（`None` 字段沿用原值）
+    fn apply_overlay(&mut self, overlay: Self::Overlay);
+
+    /// 合并后的校验（默认通过）
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// 解析「默认层 + 可选覆盖层」两份 TOML 文本
+///
+/// 未知键严格报错（拼错键必须被看见）；覆盖层缺席即只用默认层。
+pub fn parse_with_overlay<T: OverlayConfig>(base_toml: &str, overlay_toml: Option<&str>) -> Result<T> {
+    let mut cfg: T = toml::from_str(base_toml).context("解析默认配置失败")?;
+    if let Some(text) = overlay_toml {
+        let overlay: T::Overlay = toml::from_str(text).context("解析覆盖配置失败")?;
+        cfg.apply_overlay(overlay);
+    }
+    cfg.validate()?;
+    Ok(cfg)
+}
+
 /// 覆盖层：与默认层同构、字段全 `Option`（`None` = 沿用默认层）
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Overlay {
+pub struct Overlay {
     sim: Option<SimOverlay>,
     search: Option<SearchOverlay>,
     record: Option<RecordOverlay>,
     output: Option<OutputOverlay>,
     presets: Option<PresetsOverlay>,
+}
+
+impl OverlayConfig for Config {
+    type Overlay = Overlay;
+
+    fn apply_overlay(&mut self, overlay: Overlay) {
+        overlay.apply(self);
+    }
+
+    fn validate(&self) -> Result<()> {
+        Config::validate(self)
+    }
 }
 
 impl Overlay {

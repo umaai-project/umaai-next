@@ -19,8 +19,8 @@ use umaai_core::{AttributeArray, Data, Ill};
 
 use crate::game::base::{BaseAction, BaseGame, BasePerson, BasicStage, RuleStreams};
 use crate::game::{
-    ActionEnum, FriendOutState, Game, InheritInfo, PersonType, StageId, SupportCard, Trainer, TrainingBasicTable,
-    TrainingValueSource, Uma, UmaFlagsExt, extra_training_event, hint_attr_event, hint_skill_event,
+    ActionEnum, FriendOutState, Game, InheritInfo, StageId, SupportCard, Trainer, TrainingBasicTable,
+    TrainingValueSource, Uma, UmaFlagsExt,
 };
 
 /// 内置训练基础值表（数值复刻温泉剧本表：5 训练 × 5 等级 × [速耐力根智 PT 体力]）
@@ -127,91 +127,8 @@ impl BasicAction {
             game.uma_mut().add_value(&value);
             // 增加训练次数
             game.base.train_level_count[train] += 1;
-            // 增加羁绊：按人头类型给基值（支援卡 +7 / 理事长·记者 +5）；
-            // 爱娇的全局 +2 由 add_friendship 统一施加
-            let mut hint_persons = vec![];
-            let mut friend_clicked = false;
-            let mut yayoi_clicked = false;
-            let mut reporter_clicked = false;
-            for person_index in game.base.distribution[train].clone() {
-                // 跳过空位（-1 表示空位）
-                if person_index < 0 {
-                    continue;
-                }
-                let p = person_index as usize;
-                let base = match game.persons[p].person_type {
-                    PersonType::Yayoi | PersonType::Reporter => 5,
-                    _ => 7,
-                };
-                game.add_friendship(p, base);
-                if game.persons[p].is_hint {
-                    hint_persons.push(person_index);
-                }
-                match game.persons[p].person_type {
-                    PersonType::ScenarioCard => friend_clicked = true,
-                    PersonType::Yayoi => yayoi_clicked = true,
-                    PersonType::Reporter => reporter_clicked = true,
-                    _ => {}
-                };
-            }
-            // 生成加练或者红点事件
-            if let Some(p) = hint_persons.choose(rng) {
-                let attr_prob = Data::get()?.event_prob("hint_attr")?;
-                let hint_level = if (*p as usize) < game.deck.len() {
-                    1 + game.deck[*p as usize].card_value().hint_level
-                } else {
-                    1
-                };
-                let mut hint_event = if rng.random_bool(attr_prob) {
-                    // 红点提供属性
-                    hint_attr_event(game.persons[*p as usize].train_type as usize, *p as usize)?
-                } else {
-                    // 红点提供技能
-                    hint_skill_event(hint_level, *p as usize)
-                };
-                hint_event.name = format!("{} - {}", hint_event.name, game.deck[*p as usize].short_name());
-                game.unresolved_events.push(hint_event);
-            }
-            let extra_train_prob = Data::get()?.event_prob("extra_train")?;
-            if !game.is_xiahesu() && rng.random_bool(extra_train_prob) {
-                let mut event = extra_training_event(train)?;
-                // 理事长位置按类型动态查（与点击事件同法）
-                if let Some(yayoi_index) = game.person_index_of_type(PersonType::Yayoi) {
-                    event.person_index = Some(yayoi_index as i32);
-                }
-                game.unresolved_events.push(event);
-            }
-            // 更新友人状态
-            if friend_clicked {
-                match game.friend.out_state {
-                    FriendOutState::UnClicked => {
-                        game.friend.out_state = FriendOutState::BeforeUnlock;
-                        // 归属在结算时按友人身份定位（`apply_event`），这里不塞下标
-                        let event = Data::get()?.events.friend_events["first"].clone();
-                        game.unresolved_events.push(event);
-                    }
-                    _ => {
-                        let event = Data::get()?.events.friend_events["click"].clone();
-                        game.unresolved_events.push(event);
-                    }
-                }
-            }
-            if yayoi_clicked {
-                let mut event = Data::get()?.system_event("yayoi_click")?.clone();
-                // 归属人头按类型动态定位：位置随卡数走，不用数据里的固定下标
-                if let Some(index) = game.person_index_of_type(PersonType::Yayoi) {
-                    event.person_index = Some(index as i32);
-                }
-                game.unresolved_events.push(event);
-            }
-            if reporter_clicked {
-                let mut event = Data::get()?.system_event("reporter_click")?.clone();
-                event.choices[0][0].value.status_pt[train] = 2;
-                if let Some(index) = game.person_index_of_type(PersonType::Reporter) {
-                    event.person_index = Some(index as i32);
-                }
-                game.unresolved_events.push(event);
-            }
+            // 点击后副作用（羁绊 / 红点 / 加练 / 友人·理事长·记者点击）统一走底座可复用件
+            game.base.default_after_train(&mut game.persons, train, rng)?;
         }
         Ok(())
     }
@@ -362,22 +279,10 @@ impl BasicGame {
         self.friend.card_id.and_then(|id| self.person_index_of_card(id))
     }
 
-    /// 增加羁绊（爱娇的全局 +2 统一在此施加；同步支援卡面羁绊；上限 100）
+    /// 增加羁绊（转调 [`BaseGame::add_friendship`]：爱娇 +2、上限 100、同步卡面）
     pub fn add_friendship(&mut self, person_index: usize, value: i32) {
-        if person_index < self.persons.len() {
-            // 爱娇：所有正向羁绊获取额外 +2（负向扣减不受影响）
-            let value = if value > 0 && self.uma.flags.aijiao {
-                value + 2
-            } else {
-                value
-            };
-            let new_value = (self.persons[person_index].friendship + value).min(100);
-            self.persons[person_index].friendship = new_value;
-            // 卡面羁绊同步：人头下标 ≠ 卡组下标，按 card_id 反查槽位
-            if let Some(slot) = self.deck_index_of(person_index) {
-                self.deck[slot].friendship = new_value;
-            }
-        }
+        // persons 与 base 是两个独立字段，可同时借用
+        self.base.add_friendship(&mut self.persons, person_index, value);
     }
 }
 
@@ -448,8 +353,9 @@ impl Game for BasicGame {
                 // 普通训练
                 actions.push(BasicAction(Sleep));
                 actions.push(BasicAction(NormalOuting));
-                // 历史行为：自 turn > 13 起可自选比赛（较 can_self_race 晚 1 回合）
-                if self.turn > 13 && self.turn < 72 {
+                // 历史行为：自 turn > 13 起可自选比赛（较 can_self_race 晚 1 回合）；
+                // 等级表为 0 的回合没有赛事，不列比赛
+                if self.turn > 13 && self.turn < 72 && self.race_grade().is_some() {
                     actions.push(BasicAction(Race));
                 }
                 if !self.uma.flags.ill.is_empty() {
@@ -670,6 +576,8 @@ impl Game for BasicGame {
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
+
+    use crate::game::PersonType;
 
     use super::*;
     use crate::testutil::RACE_GRADES;

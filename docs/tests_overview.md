@@ -3,19 +3,19 @@
 本文件对照源码列出全部测试：按 crate 分节、按文件分小节、一行一条，便于定位用例与评估覆盖面。
 测试分层与判定口径的设计依据见 [`plan/miko_next_plan.md`](plan/miko_next_plan.md) 的「测试策略」节。
 
-口径（2026-10-19 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **326 passed / 0 failed / 3 ignored**；
-`cargo test --workspace --release -- --list` 共列出 **329 条**（327 个 `#[test]` + 2 个 doctest）。
+口径（2026-10-19 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **332 passed / 0 failed / 3 ignored**；
+`cargo test --workspace --release -- --list` 共列出 **335 条**（333 个 `#[test]` + 2 个 doctest）。
 
 | 层 | 位置 | 判定 | 条数 |
 |---|---|---|---|
-| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 270 |
+| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 276 |
 | L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 35 |
 | L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 21 |
 | L4 baseline | `crates/umaai-tests/tests/baseline.rs` + `crates/umaai-tests/baselines/*.json` | 比对后返回 `Err` / 非零退出码 | 1 |
 | 文档示例 | doctest | `umasim` 1 条标 `ignore` 不执行；`umaai-update` 1 条随测试执行 | 2 |
-| **合计** | | | **329** |
+| **合计** | | | **335** |
 
-- 分 crate：`umaai-core` 68 · `umasim` 57 · `umaai` 70 · `umaai-cli` 31 · `umaai-tools` 52 · `umaai-tests` 22 · `umaai-update` 29。
+- 分 crate：`umaai-core` 68 · `umasim` 63 · `umaai` 70 · `umaai-cli` 31 · `umaai-tools` 52 · `umaai-tests` 22 · `umaai-update` 29。
 - 默认跳过 3 条（需手动跑 `--ignored`）：`channel_watches_real_writes`（真 watcher 写入链路）、`session_runs_on_real_channel`（真通道收局）、`define_terminal_record` 的 doctest（标记 `ignore`）。
 
 ## 运行方式
@@ -59,7 +59,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - [umasim (57)](#umasim-57)
   - [`src/game/base/basic.rs` (8)](#srcgamebasebasicrs-8)
   - [`src/game/base/stage.rs` (2)](#srcgamebasestagers-2)
-  - [`src/game/base/mod.rs` (12)](#srcgamebasemodrs-12)
+  - [`src/game/base/mod.rs` (18)](#srcgamebasemodrs-18)
   - [`src/game/inherit.rs` (1)](#srcgameinheritrs-1)
   - [`src/game/stage.rs` (1)](#srcgamestagers-1)
   - [`src/game/support_card.rs` (4)](#srcgamesupport_cardrs-4)
@@ -295,7 +295,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_stage_sequence` — 六个阶段逐个推进且终点唯一，不可越阶或回退
 - `test_stage_ids` — 阶段编号与历史 CRN 阶段键逐一对齐，是外部记录的兼容口径
 
-### `src/game/base/mod.rs` (12)
+### `src/game/base/mod.rs` (18)
 
 **条件边界**
 - `test_can_self_race_bounds` — 自选比赛的回合窗口边界：第 13 回合开放、第 72 回合关闭
@@ -316,6 +316,16 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_rule_streams_ignore_decision_draws` — 规则流取值不受外部消耗次数影响
 - `test_apply_event_friend_bonus_integration` — 事件生效计入次数，带数值的友人事件确实入账
 - `test_duplicate_card_rejected` — 重复支援卡在构造期即拒绝：按 `card_id` 判重、点名两处槽位与 cardId，同卡不同突破档同样拒绝，正常卡组不受影响
+
+**比赛等级表口径**
+- `test_race_grade_semantics` — `0 = 无比赛`、`1 = G1 最高 … 4 = OP 最低`；越界与决赛期一律无比赛
+- `test_push_race_event_without_race_errors` — 无比赛回合构造比赛事件明确报错；生涯决赛正常走 `race_career`
+- `test_self_race_uses_g1_event` — 等级 1 的回合生成 G1 事件（不是 OP）
+
+**剧本可复用件（温泉 M1 前置）**
+- `test_push_race_event_default_scale` — 比赛事件构造的默认系数与旧 `do_race` 口径逐位一致（同 `race_bonus` 同面板）
+- `test_push_race_event_pt_rate` — `pt_rate` 只缩放技能点一项，不影响五维
+- `test_add_friendship_contract` — 羁绊统一出口：爱娇额外 +2、上限 100、卡面按 `card_id` 同步
 
 ### `src/game/inherit.rs` (1)
 

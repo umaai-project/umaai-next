@@ -140,13 +140,199 @@ impl BaseGame {
         self.event = Some(streams.event);
     }
 
+    /// 构造本回合的比赛事件并入队（生涯 / 自选两支统一入口）
+    ///
+    /// `scale` 是**实际系数**（可直接乘到事件面板上，不是面板值）：默认调用方传
+    /// `(100 + uma.race_bonus) / 100`（`race_bonus` 即支援卡「赛后」累加），剧本可在此基础上
+    /// 再倍乘自己的机制系数（如温泉生涯赛 ×1.33 × 源泉加成）。
+    /// `pt_rate` 只缩放技能点一项，`1.0` 表示不变（供剧本特例单独压低 PT）。
+    ///
+    /// 分支口径：生涯回合取 `race_career`；非生涯回合按等级表取 `race_g{grade}`
+    /// （`1 = G1` … `4 = OP`，`0 = 无比赛`）。没有可选比赛时**报错**而不是猜一个等级：
+    /// 决赛期（72–77）只有 73/75/77 的生涯赛，等级表也不覆盖 72 以后。
+    pub fn push_race_event(&mut self, scale: f64, pt_rate: f64) -> Result<()> {
+        let mut event = if self.uma.is_race_turn(self.turn) {
+            Data::get()?.system_event("race_career")?.clone()
+        } else {
+            let grade = self.race_grade().ok_or_else(|| {
+                anyhow!(
+                    "该回合没有可自选比赛：turn={}（等级表 {} 项，0=无比赛，72 以后为决赛期）",
+                    self.turn,
+                    self.race_grades.len()
+                )
+            })?;
+            Data::get()?.system_event(&format!("race_g{grade}"))?.clone()
+        };
+        // 系数一律 f64（新仓口径），面板值 round 后写回
+        event.map_status(|x| (f64::from(x) * scale).round() as i32);
+        if pt_rate != 1.0 {
+            let value = &mut event.choices[0][0].value;
+            value.status_pt[5] = (f64::from(value.status_pt[5]) * pt_rate).round() as i32;
+        }
+        self.unresolved_events.push(event);
+        self.uma.set_race(self.turn);
+        Ok(())
+    }
+
+    /// 增加羁绊（统一出口：爱娇 +2、上限 100、同步卡面）
+    ///
+    /// `persons` 由调用方传入（人头容器在剧本侧，`BaseGame` 不持有）：人头下标 ≠ 卡组下标，
+    /// 卡面同步按 `card_id` 反查，不按下标对位。所有正向羁绊获取都应经本方法，
+    /// 爱娇的全局 +2 才能只在一处施加。
+    pub fn add_friendship<P: crate::game::Person>(&mut self, persons: &mut [P], person_index: usize, value: i32) {
+        if person_index >= persons.len() {
+            return;
+        }
+        let value = if value > 0 && self.uma.flags.aijiao {
+            value + 2
+        } else {
+            value
+        };
+        let new_value = (persons[person_index].friendship() + value).min(100);
+        persons[person_index].set_friendship(new_value);
+        // 卡面羁绊同步：按 card_id 反查槽位
+        if let Some(card_id) = persons[person_index].card_id()
+            && let Some(slot) = self.deck.iter().position(|card| card.card_id == card_id)
+        {
+            self.deck[slot].friendship = new_value;
+        }
+    }
+
+    /// 训练成功后的**默认后处理**（AfterTrain 阶段触发的主要内容）
+    ///
+    /// 训练前后事件按阶段区分：本方法负责「训练后」这一批（羁绊 / 红点 / 加练 / 友人点击 /
+    /// 理事长·记者点击），与回合开始（Begin）的事件链分属不同阶段。数值入账与训练计数由
+    /// 调用方负责。`persons` 由调用方传入（人头容器在剧本侧）。
+    ///
+    /// 剧本可在自己的训练结算后调用本方法；若阶段内容与基础局不同，直接写自己的实现即可
+    /// （方法名带 `default_` 表示这是默认档，不是必须走的路径）。
+    ///
+    /// 副作用：
+    /// - 按人头类型加羁绊（支援卡 +7 / 理事长·记者 +5，爱娇由 [`Self::add_friendship`] 施加）；
+    /// - 从本训练位的红点人头里抽一人，生成红点事件（属性或技能，含单卡 hint 等级）；
+    /// - 非合宿时按概率生成加练事件；
+    /// - 友人首次 / 常规点击、理事长点击、记者点击事件。
+    pub fn default_after_train<P: crate::game::Person>(
+        &mut self,
+        persons: &mut [P],
+        train: usize,
+        rng: &mut impl Rng,
+    ) -> Result<()> {
+        use crate::game::FriendOutState;
+        let mut hint_persons = vec![];
+        let mut friend_clicked = false;
+        let mut yayoi_clicked = false;
+        let mut reporter_clicked = false;
+        for person_index in self.distribution[train].clone() {
+            // 跳过空位（-1 表示空位）
+            if person_index < 0 {
+                continue;
+            }
+            let p = person_index as usize;
+            let base = match persons[p].person_type() {
+                crate::game::PersonType::Yayoi | crate::game::PersonType::Reporter => 5,
+                _ => 7,
+            };
+            self.add_friendship(persons, p, base);
+            if persons[p].hint() {
+                hint_persons.push(person_index);
+            }
+            match persons[p].person_type() {
+                crate::game::PersonType::ScenarioCard => friend_clicked = true,
+                crate::game::PersonType::Yayoi => yayoi_clicked = true,
+                crate::game::PersonType::Reporter => reporter_clicked = true,
+                _ => {}
+            };
+        }
+        // 生成加练或者红点事件（人头下标 ≠ 卡组下标：按 card_id 反查卡面）
+        if let Some(p) = hint_persons.choose(rng) {
+            let attr_prob = Data::get()?.event_prob("hint_attr")?;
+            let card = persons[*p as usize]
+                .card_id()
+                .and_then(|cid| self.deck.iter().find(|c| c.card_id == cid));
+            let hint_level = card.map_or(1, |c| 1 + c.card_value().hint_level);
+            let mut hint_event = if rng.random_bool(attr_prob) {
+                crate::game::hint_attr_event(persons[*p as usize].train_type() as usize, *p as usize)?
+            } else {
+                crate::game::hint_skill_event(hint_level, *p as usize)
+            };
+            if let Some(card) = card {
+                hint_event.name = format!("{} - {}", hint_event.name, card.short_name());
+            }
+            self.unresolved_events.push(hint_event);
+        }
+        let extra_train_prob = Data::get()?.event_prob("extra_train")?;
+        if !self.is_xiahesu() && rng.random_bool(extra_train_prob) {
+            let mut event = crate::game::extra_training_event(train)?;
+            if let Some(yayoi_index) = persons
+                .iter()
+                .position(|p| p.person_type() == crate::game::PersonType::Yayoi)
+            {
+                event.person_index = Some(yayoi_index as i32);
+            }
+            self.unresolved_events.push(event);
+        }
+        // 更新友人状态
+        if friend_clicked {
+            match self.friend.out_state {
+                FriendOutState::UnClicked => {
+                    self.friend.out_state = FriendOutState::BeforeUnlock;
+                    let event = Data::get()?.events.friend_events["first"].clone();
+                    self.unresolved_events.push(event);
+                }
+                _ => {
+                    let event = Data::get()?.events.friend_events["click"].clone();
+                    self.unresolved_events.push(event);
+                }
+            }
+        }
+        if yayoi_clicked {
+            let mut event = Data::get()?.system_event("yayoi_click")?.clone();
+            if let Some(index) = persons
+                .iter()
+                .position(|p| p.person_type() == crate::game::PersonType::Yayoi)
+            {
+                event.person_index = Some(index as i32);
+            }
+            self.unresolved_events.push(event);
+        }
+        if reporter_clicked {
+            let mut event = Data::get()?.system_event("reporter_click")?.clone();
+            event.choices[0][0].value.status_pt[train] = 2;
+            if let Some(index) = persons
+                .iter()
+                .position(|p| p.person_type() == crate::game::PersonType::Reporter)
+            {
+                event.person_index = Some(index as i32);
+            }
+            self.unresolved_events.push(event);
+        }
+        Ok(())
+    }
+
     /// 该回合是否允许**自选比赛**（通用规则，各剧本 list_actions 复用）
     ///
-    /// 自选比赛仅限回合 13-71（0-based）；URA 回合（72-77）不可自选。
+    /// 两个条件同时成立：
+    /// - 回合窗口：13–71（0-based）；URA 回合（72–77）不可自选（73/75/77 是生涯决赛，
+    ///   72/74/76 是黑障回合，等级表也不覆盖 72 以后）；
+    /// - **等级表非 0**：`race_grades[turn] = 0` 表示该回合没有可参加的赛事。
+    ///
+    /// 等级语义：`1 = G1（最高）` … `4 = OP（最低）`；`0 = 无比赛`。
     /// 注意：`BasicGame::list_actions` 以 `turn > 13` 起始（较本规则晚 1 回合，
     /// 历史行为保留）。
     pub fn can_self_race(&self) -> bool {
-        self.turn > 12 && self.turn < 72
+        self.turn > 12 && self.turn < 72 && self.race_grade().is_some()
+    }
+
+    /// 本回合**可选比赛的最高等级**（`1 = G1` 最高 … `4 = OP` 最低）
+    ///
+    /// `None` 表示本回合没有可自选比赛：回合越界（等级表只覆盖 0–71）、
+    /// 等级为 0（无比赛），或 URA 决赛期。
+    pub fn race_grade(&self) -> Option<i32> {
+        self.race_grades
+            .get(self.turn as usize)
+            .copied()
+            .filter(|grade| *grade > 0)
     }
 
     /// 该回合是否允许**友人出行**（通用规则，各剧本 list_actions 复用）
@@ -439,14 +625,21 @@ mod tests {
     /// 层1：自选比赛回合边界
     #[test]
     fn test_can_self_race_bounds() {
-        let mut game = BaseGame { turn: 12, ..Default::default() };
-        assert!(!game.can_self_race(), "回合 12 不可自选");
+        // 等级表覆盖 0–71；0 = 无比赛，1 = G1 … 4 = OP
+        let mut grades = vec![1; 72];
+        grades[12] = 0;
+        let mut game = BaseGame {
+            turn: 12,
+            race_grades: std::sync::Arc::new(grades),
+            ..Default::default()
+        };
+        assert!(!game.can_self_race(), "回合 12 等级为 0（无比赛），不可自选");
         game.turn = 13;
         assert!(game.can_self_race(), "回合 13 起可自选");
         game.turn = 71;
         assert!(game.can_self_race(), "回合 71 仍可自选");
         game.turn = 72;
-        assert!(!game.can_self_race(), "URA 回合不可自选");
+        assert!(!game.can_self_race(), "URA 回合不可自选（等级表不覆盖）");
     }
 
     /// 层1：友人出行条件边界
@@ -648,5 +841,111 @@ mod tests {
             out
         };
         assert_eq!(draw(0), draw(17), "规则流取值不应受任何外部消耗次数影响");
+    }
+
+    /// H1：`push_race_event` 的默认系数与旧 `do_race` 口径一致（生涯事件按 race_bonus 缩放）
+    #[test]
+    fn test_push_race_event_default_scale() -> Result<()> {
+        use crate::game::base::BaseAction;
+        let mut a = crate::testutil::basic_game()?;
+        // 生涯比赛回合（turn 11 起为生涯赛），走 race_career 分支，避开等级表依赖
+        a.turn = 11;
+        a.uma.race_bonus = 30;
+        let mut b = a.clone();
+        b.uma.race_bonus = 30;
+        BaseAction::do_race(&mut a, &mut rand::rng())?;
+        b.push_race_event((100.0 + 30.0) / 100.0, 1.0)?;
+        assert_eq!(a.unresolved_events.len(), b.unresolved_events.len());
+        assert_eq!(
+            a.unresolved_events[0].choices[0][0].value.status_pt,
+            b.unresolved_events[0].choices[0][0].value.status_pt
+        );
+        println!("H1: 默认系数与 do_race 一致");
+        Ok(())
+    }
+
+    /// H1：`pt_rate` 只缩放技能点一项
+    #[test]
+    fn test_push_race_event_pt_rate() -> Result<()> {
+        let mut game = crate::testutil::basic_game()?;
+        game.turn = 11;
+        let scale = (100 + game.uma.race_bonus) as f64 / 100.0;
+        game.push_race_event(scale, 1.0)?;
+        let base_pt = game.unresolved_events[0].choices[0][0].value.status_pt[5];
+        game.unresolved_events.clear();
+        game.push_race_event(scale, 0.5)?;
+        let half_pt = game.unresolved_events[0].choices[0][0].value.status_pt[5];
+        assert_eq!(half_pt, (base_pt as f64 * 0.5).round() as i32);
+        println!("H1: pt_rate 只缩放技能点（{base_pt} -> {half_pt}）");
+        Ok(())
+    }
+
+    /// 比赛等级表口径：0 = 无比赛，1 = G1 最高 … 4 = OP 最低
+    #[test]
+    fn test_race_grade_semantics() -> Result<()> {
+        let mut game = crate::testutil::basic_game()?;
+        // 回合 12：等级表为 0 → 不可自选比赛
+        game.turn = 12;
+        assert_eq!(game.race_grade(), None, "等级 0 应为无比赛");
+        assert!(!game.can_self_race(), "无比赛回合不可自选");
+        // 回合 13：等级 3（G3）→ 可自选
+        game.turn = 13;
+        assert_eq!(game.race_grade(), Some(3), "回合 13 应为 G3");
+        assert!(game.can_self_race());
+        // 决赛期黑障回合与越界回合一律 None
+        game.turn = 72;
+        assert_eq!(game.race_grade(), None, "72 起等级表不覆盖，应为无比赛");
+        println!("等级表口径正确：0=无比赛、1=G1 … 4=OP");
+        Ok(())
+    }
+
+    /// 无比赛回合构造比赛事件要明确报错，而不是猜等级
+    #[test]
+    fn test_push_race_event_without_race_errors() -> Result<()> {
+        let mut game = crate::testutil::basic_game()?;
+        game.turn = 12;
+        assert!(game.push_race_event(1.0, 1.0).is_err(), "无比赛回合应报错");
+        game.turn = 73;
+        assert!(
+            game.push_race_event(1.0, 1.0).is_ok(),
+            "73 是生涯决赛，应走 race_career"
+        );
+        println!("无比赛回合报错、生涯决赛正常");
+        Ok(())
+    }
+
+    /// 自选比赛按等级表取事件：G1 回合生成 race_g1（最高档，不是 OP）
+    #[test]
+    fn test_self_race_uses_g1_event() -> Result<()> {
+        let mut game = crate::testutil::basic_game()?;
+        game.turn = 22; // 等级表为 1（G1）
+        game.push_race_event(1.0, 1.0)?;
+        let name = &game.unresolved_events[0].name;
+        assert_eq!(name, "G1比赛", "G1 回合应生成 G1 事件，实际 {name}");
+        println!("G1 回合事件正确: {name}");
+        Ok(())
+    }
+
+    /// H4：契约出口的羁绊加成——爱娇 +2、上限 100、卡面同步
+    #[test]
+    fn test_add_friendship_contract() -> Result<()> {
+        let mut game = crate::testutil::basic_game()?;
+        game.uma.flags.aijiao = true;
+        let mut persons = game.persons.clone();
+        let before = persons[0].friendship;
+        game.base.add_friendship(&mut persons, 0, 7);
+        assert_eq!(persons[0].friendship, (before + 7 + 2).min(100), "爱娇应额外 +2");
+        let slot = game
+            .base
+            .deck
+            .iter()
+            .position(|c| c.card_id == persons[0].card_id.unwrap());
+        assert_eq!(
+            slot.map(|s| game.base.deck[s].friendship),
+            Some(persons[0].friendship),
+            "卡面应同步"
+        );
+        println!("H4: 爱娇 +2 与卡面同步生效");
+        Ok(())
     }
 }

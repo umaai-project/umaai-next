@@ -51,6 +51,12 @@ pub trait Person: Debug + Clone + PartialEq + Default {
     /// hint setter
     fn set_hint(&mut self, hint: bool);
 
+    /// friendship setter
+    ///
+    /// 与 [`Person::set_hint`] 对称：羁绊的写入必须经统一出口
+    /// （`BaseGame::add_friendship`），由出口负责爱娇加成、上限与卡面同步，调用方不要直接改。
+    fn set_friendship(&mut self, friendship: i32);
+
     /// 支援卡 ID getter。非支援卡人头（理事长 / 记者 / NPC）返回 `None`。
     ///
     /// 用于把人头反查回卡组槽位，见 [`Game::deck_index_of`]。
@@ -307,7 +313,13 @@ pub trait Game: Clone + TrainingValueSource {
         }
         Ok(())
     }
-    /// 分配 Hint。注意同一个卡的不同分身会同时触发 Hint
+    /// 分配 Hint（基础公式：基础发生率 × 卡面 `hint_prob_increase` 加算）
+    ///
+    /// 基础公式**不包含剧本修正**：剧本要改发生率算法（如温泉的源泉加成）时，整体覆写本方法、
+    /// 在自身实现里维护实际公式，不要让默认实现去猜系数。
+    ///
+    /// 注意同一个卡的不同分身会同时触发 Hint；红点**发生次数**（`hint_count_bonus`）与
+    /// **红点等级**（`hint_level`）是另外两套机制，不在这里处理。
     fn distribute_hint(&mut self, rng: &mut impl Rng) -> Result<()> {
         let base_hint_rate = Data::get()?.consts.base_hint_rate / 100.0;
         // 人头下标 ≠ 卡组下标：预抽 (card_id, hint 概率加成)，循环内按 card_id 反查
