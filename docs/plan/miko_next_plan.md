@@ -2,7 +2,7 @@
 
 > 本文取代 v1 方案（`umaai-rs/.trae/documents/miko_next_rebuild_plan.md`）。v1 作为机制清单与附录参考随仓保留于
 > [`docs/plan/v1_plan_reference.md`](v1_plan_reference.md)。
-> 本文记录 2026-10-14 定稿决策、2026-10-15 的层界修订、2026-10-16 的独立仓改判与 2026-10-17 的 P4′ / P5′ / P6′ 执行定稿（见 §9）；未决项集中在 [`docs/notes/open_items.md`](../notes/open_items.md)。
+> 本文记录 2026-10-14 定稿决策、2026-10-15 的层界修订、2026-10-16 的独立仓改判、2026-10-17 的 P4′ / P5′ / P6′ 执行定稿与 2026-10-19 的 P6c′ 更新器定稿（见 §9 与 [`tools_update.md`](tools_update.md)）；未决项集中在 [`docs/notes/open_items.md`](../notes/open_items.md)。
 
 ---
 
@@ -19,7 +19,7 @@
 | 7 | 数据：**单一数据根** `gamedata/`（平铺 + `manifest.json` 校验入口）；剧本数据外置；加载收敛到单一 `data` 模块；**路径由宿主注入** |
 | 8 | `Data` 单例：**值类型 + `OnceLock` 全局便捷**（`init` / `get`）；**不做热更新**；`init` 幂等 |
 | 9 | 测试：单元 `assert`、集成 print+Agent、baseline 自动判定；跨 crate 集成测试放**专用 crate `umaai-tests`** |
-| 10 | 更新器：放弃独立 GUI 形态，改由入口层（`umaai-cli`）在启动时提示 / 子命令更新数据；**不做进程内热更**；细节待定 |
+| 10 | 更新器：**放弃独立 GUI 形态**；能力做成零引擎依赖的公共库 **`umaai-update`**（2026-10-19 拍板，见 [`tools_update.md`](tools_update.md)），入口接线 / 自更新 / 发布侧按需开工；**不做进程内热更**；更新源是产品 crate 的编译期常量，频道（AI 数据 / 小黑板数据 / 程序自身）分别更新 |
 | 11 | 算法探索 workbench（GA / NN）：**待定**（倾向独立项目） |
 | 12 | 工具链统一 **stable**（钉死版本）；rustfmt 只用稳定选项，放弃 nightly 专属风格 |
 | 13 | **层界（2026-10-15 定）**：`umaai-core` 只放**纯 schema/DTO + 数据加载 + 零依赖纯函数工具 + RNG + 统一错误**；**带行为的领域类型、全部契约 trait、领域算法归 `umasim`** |
@@ -49,7 +49,7 @@
 
 ```
 miko_next/
-├─ Cargo.toml                 # workspace（6 members，resolver = 3）
+├─ Cargo.toml                 # workspace（7 members，resolver = 3）
 ├─ rust-toolchain.toml        # stable（钉死版本，如 1.99.0）
 ├─ rustfmt.toml               # 稳定工具链可用的格式规则
 ├─ .gitignore
@@ -59,9 +59,10 @@ miko_next/
 │  ├─ umaai-core/   # 核心层：纯 schema/DTO + 数据加载 + 纯函数工具 + RNG 三流 + 统一错误
 │  ├─ umasim/       # 计算层：带行为的领域类型 / 契约 trait / 搜索与策略算法
 │  ├─ umaai/        # 引擎 lib：Runner / 协议 / Config / 决策编排 / record / luck
-│  ├─ umaai-cli/    # print 前端 + 入口层功能（更新等）
+│  ├─ umaai-cli/    # print 前端 + 入口层功能（更新接线待开工）
 │  ├─ umaai-tools/  # 探针 / 基准（publish = false）
-│  └─ umaai-tests/  # 集成 / 端到端 / baseline（publish = false）
+│  ├─ umaai-tests/  # 集成 / 端到端 / baseline（publish = false）
+│  └─ umaai-update/ # 分发客户端公共库：频道清单协议 / 传输 / 校验 / 安装（零引擎依赖）
 ├─ templates/         # 空剧本仓模板（独立包，不进 workspace；CI 单独 check）
 │  └─ umaai-scenario/
 ├─ docs/
@@ -110,6 +111,7 @@ miko_next/
 - **单向依赖**：`umaai-cli` → `umaai` → `umasim` → `umaai-core`；`umaai-tools` / `umaai-tests` 依赖前三者，不进发布
 - **核心零重依赖**：`umaai-core` 只允许 `serde`（derive）/ `serde_json` / `thiserror` / `rand` / `int-enum` 这类轻量跨平台库
 - **终端依赖只在 `umaai-cli`**：着色 / 表格 / 进度 / 交互 / 日志
+- **网络依赖只在 `umaai-update`**（2026-10-19 加）：分发客户端公共库，**零引擎依赖、不在引擎依赖链上**，可经特性 `http` 关闭网络面；引擎与剧本都不依赖它，宿主入口按需引用
 - **dev 重依赖只在 `umaai-tools`**：criterion / ndarray / pprof 等
 - **下游新仓只面向契约 trait 编程**，禁止直接引用具体剧本类型
 
@@ -200,15 +202,17 @@ miko_next/
 
 ---
 
-## 7. 更新与分发（细节待定）
+## 7. 更新与分发（2026-10-19 定稿，详见 [`tools_update.md`](tools_update.md)）
 
-- 放弃独立 GUI 更新器形态；改由**入口层**（`umaai-cli`）承担
-- 启动时默认**轻量检查 + 提示**（发现新数据 → 询问是否更新），显式 `umaai update` 做真正下载/覆盖
-- **数据更新**（本项目 `gamedata`）：下载 → 覆盖 → **提示重启生效**（用户覆盖层 `ai_config.toml` 在工作目录、不在数据根，不受覆盖影响）
-- **自身更新**：Windows 无法覆盖运行中 exe → 下载新 exe → rename 旧的 → 拉起新的 → 退出
-- **可降级**：`--no-update` / 配置关闭 / 短超时 / 失败不阻断启动
-- `ura_data`（小黑板数据）是否纳入：**待定**
-- **不做进程内热更新**
+- **形态**：放弃独立 GUI 更新器；能力做成**零引擎依赖的公共库 `umaai-update`**（清单协议 / 传输 / 校验 / 安装），入口接线、自更新、发布侧改造随后开工
+- **更新源**：产品 crate 的**编译期常量**（库不内置域名、不读配置文件、不提供改源开关）；请求头（如防盗链 Referer）随源常量声明
+- **频道模型**：`ai_data`（AI 数据 → 数据根）、`ura_data`（小黑板数据 → 发布目录 `.portable`）、`auto_update`（程序自身）**分别更新**——各自清单、各自版本、各自成败，单频道失败不阻断其他频道；`ai_config.toml` 默认层随 `ai_data` 更新，宿主目录的覆盖层不受影响
+- **清单协议**：源上 `<基址>/<频道 id>/update.json`（新 JSON，逐文件 sha256、`protocol` 版本门控、`schema_version` 数据门控），不复用旧 `version.toml`；清单**不携带安装路径**，装到哪只由本地频道声明决定
+- **判定与安装**：无状态（清单哈希 vs 本地文件，可自愈）；全部下载到工作目录下的临时目录 → 全部校验 → 备份 + 替换（失败回滚）→ 成功后删除临时目录；**不做进程内热更**（换数据 + 重启生效）
+- **启动检查**：主线 CLI 不默认联网；是否在启动时检查由真实产品入口决定（`--no-update` / 短超时 / 失败不阻断由入口层落实）
+- **自身更新**：Windows 无法覆盖运行中 exe → 下载新 exe → rename 旧的 → 拉起新的 → 退出（P6c′-c 开工时落地）；剧本 AI 本体走同一机制，由剧本仓在自己的 bin 里声明
+- **安全档**：HTTPS + sha256；清单签名与安装前验签**暂不做**（延后项）
+- **发布侧**：CDN 目录沿用旧 key，新增 `update.json`（由库的 `manifest::build` 生成，消除手工 `filelist`）；旧客户端读 `version.toml` 与新客户端**可并存过渡**
 
 ---
 
@@ -231,7 +235,7 @@ miko_next/
 
 | 阶段 | 交付 | 状态 |
 |---|---|---|
-| **P0′** | 建仓：目录 + `git init` + workspace + 6 crate 空骨架 + toolchain/fmt/CI + `docs/` + `gamedata/` | ✅ 已完成 |
+| **P0′** | 建仓：目录 + `git init` + workspace + 6 crate 空骨架 + toolchain/fmt/CI + `docs/` + `gamedata/` | ✅ 已完成（`umaai-update` 于 P6c′-a 加入，现为 7 个成员） |
 | **P1′** | `umaai-core`：RNG 三流（逐字移植）+ 统一错误 + gamedata 纯 schema/DTO + 数据加载（`Data` / 路径注入 / 校验）+ 零依赖纯函数工具（通用统计原语、CRN 种子表） | ✅ 已完成（配置层 `ai_config.toml` / `GameConfig` 归 P4′；CRN 只落 `seed_at`） |
 | **P2′** | `umasim` 基座：带行为的领域类型（uma / support_card / inherit / base，去剧本）+ 契约 trait（`Game` / `Trainer` / `TrainingValueSource`） | ✅ 已完成（剧本钩子 `ScenarioRules` / `ScenarioLifecycle` 经拍板延后到有具体剧本时，见 open_items #10；`simulator` 为旧仓空壳未移植） |
 | **P3′** | 搜索框架泛化：flat_search / searchable / result / terminal（复用 core 的统计原语与 CRN 种子表） | ✅ 已完成（搜索评分为单轴口径，PT 偏好折算率归 `SearchConfig`；批量后端 / leaf 截断估值 / NN 样本导出延后，见 open_items #12–#14；`BasicGame` 接参考实现 + 随机训练员） |
@@ -239,7 +243,10 @@ miko_next/
 | **P5′** | `umaai-cli`：呈现全入 cli；`BasicGame` 跑满回合冒烟（呈现件是否拆 lib 化以复用给剧本仓 bin，开工时按§2 定） | ✅ 已完成（拆为 lib 呈现件 + 瘦 bin；呈现原语 / 样例前端 / 入口层落地，基础局单局冒烟开箱跑满回合；见下方 P5′ 执行定稿） |
 | **P6a′** | `umaai-tools`：跑批设施（固定种子批量跑局 + 分布统计）与固定根搜索探针；单 bin 多子命令 | ✅ 已完成（lib 件 + 瘦 bin，零新增第三方依赖，呈现复用 cli；见下方 P6′ 执行定稿） |
 | **P6b′** | baseline 框架：一基线一 JSON + 判定壳 + 重录入口 | ✅ 已完成（位置 `crates/umaai-tests/baselines/`；判定 `crates/umaai-tests/tests/baseline.rs`，重录 `umaai-tools baseline --update`） |
-| **P6c′** | 数据 / 程序更新器（入口层 `update`） | —（**拆出为独立阶段**：分发源、包格式与交互形态待拍板，旧仓无可移植实现） |
+| **P6c′-a** | 公共库 `umaai-update`：频道清单协议（生成 / 解析 / 校验）+ 传输（HTTP + 本地测试模式）+ `check` / `update`（备份回滚）+ schema 门控 | ✅ 已完成（2026-10-19；方案定稿见 [`tools_update.md`](tools_update.md)） |
+| **P6c′-b** | 入口接线：`umaai-cli` 引入 `update` 子命令与呈现（频道声明 / 目标路径 / 离线演练） | 待开工（设计见 [`tools_update.md`](tools_update.md) §6） |
+| **P6c′-c** | 自更新频道：`Target::SelfExe` + Windows 替换时序 + 防循环拉起（剧本 AI 本体同机制） | 待开工（设计见同上 §7） |
+| **P6c′-d** | 发布侧：CDN 目录与 `update.json` 生成流程、`ai_data` 补齐、发布步骤文档 | 待开工（设计见同上 §8） |
 | **P6e′** | 随机流分层升格为通用机制：决策流 / 局面流 / 事件流分开，剧本轴留剧本；删外挂 CRN | ✅ 已完成（core 已有原语接进计算层；守门用例见下方 P6e′ 执行定稿） |
 | **P6d′** | `umaai-tools` 分支推进对照（复盘用：同根两分支推进 n 回合比差别） | ✅ 已完成（`umaai-tools compare`：JSON 对照计划 + 单探测动作 vs 默认一选；见下方 P6d′ 执行定稿） |
 | **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | ✅ 已完成（模板 `templates/umaai-scenario/`〔独立包，CI 单独 check〕；文档 `docs/scenario/`；见下方 P7′ 执行定稿） |
@@ -285,6 +292,22 @@ miko_next/
 | 基线守门面 | **模拟数值位移**（整局终局 / 种子扫描序列 / 固定根搜索分布）；编排与呈现不入基线（各有端到端用例）。判定自带「改动一项期望即变红」的反自证守门，防止判定恒真 |
 | 机读基线口径 | 整数逐位、非整数自动带默认容差（重录时按值自动决定，不手写容差） |
 
+### P6c′ 执行定稿（2026-10-19 拍板）
+
+> 单一事实源是 [`tools_update.md`](tools_update.md)（形态、协议、阶段、不做的事与风险都在那里）；下表只记本轮拍板点。
+
+| 项 | 定稿 |
+|---|---|
+| 形态 | **公共库先立住**：新 crate `umaai-update`（workspace 第 7 个成员、零引擎依赖、不在引擎依赖链上）；入口接线 / 自更新 / 发布侧只落方案（P6c′-b / c / d） |
+| 更新源 | 产品 crate 的**编译期常量**：库不内置域名、不读配置文件、不提供 CLI / 环境变量改源开关 |
+| 频道 | `ai_data`（数据根，`schema_version` 门控，含默认层 `ai_config.toml`）与 `ura_data`（发布目录 `.portable`）**分别更新**；单频道失败不阻断其他频道 |
+| 清单 | 新 JSON `update.json`：`protocol` 版本门控 + 逐文件 sha256 + 未知字段宽容忽略 + 路径安全校验；**不带安装路径** |
+| 判定 / 安装 | 无状态哈希判定（可自愈）；全部下载到工作目录下的临时目录 → 全部校验 → 备份替换（失败回滚）→ 成功后删除临时目录 |
+| 传输 | 只保留 **HTTP**（`http` 特性，可剪）与**本地测试模式**（内存假源）；不做本地目录模式 |
+| 安全档 | HTTPS + sha256；清单签名与安装前 Authenticode 验签不做（延后） |
+| 小黑板目标 | 统一到**发布目录的 `.portable`**（`%LOCALAPPDATA%` 形态废弃）；文件集以小黑板实际读取的 9 个 `.br` 为准 |
+| 不做 | 启动默认联网检查（留给真实产品入口）、`[update]` 配置段、GUI、热更、整包与二进制增量、断点续传、多源镜像、本地版本状态文件 |
+
 ### P6e′ 执行定稿（2026-10-17 拍板）
 
 | 项 | 定稿 |
@@ -315,7 +338,7 @@ miko_next/
 
 | 项 | 定稿 |
 |---|---|
-| 模板落位 | 本仓 `templates/umaai-scenario/`（**独立包**，根 workspace `exclude`，维持验收条款「workspace 仅含 6 个 crate」）；CI 增一步 `cargo check` + `clippy -D warnings --manifest-path` |
+| 模板落位 | 本仓 `templates/umaai-scenario/`（**独立包**，根 workspace `exclude`，维持验收条款「模板不进 workspace 成员表」；成员数在 P7′ 时为 6，P6c′-a 加入 `umaai-update` 后为 7）；CI 增一步 `cargo check` + `clippy -D warnings --manifest-path` |
 | 模板内容 | 最小可编译剧本：局面（`ScenarioGame` 包 `BaseGame` + 自持阶段机 + 策略流）、动作（`Action`）、人头（复用 `BasePerson`）、`Game` 22 必备项、`FlatSearchGame` 接入、`ScenarioView` 占位、`build_game` 装配 API、仓根瘦 bin（复用 `umaai-cli` 呈现件） |
 | 依赖写法 | 开发期 `path` / 稳定期 git `tag` / 下游 `default-features = false` 三档写进模板 README；模板自带 `[workspace]` 表以便独立构建 |
 | 文档 | 新增 `docs/scenario/`：`README.md`（接入指南：建仓 / 依赖 / 数据与配置注入 / 五条纪律 / 验收 / 常见坑）+ `contracts.md`（契约逐项清单：`Game` 22 必备与默认提供项 / `Person` / `ActionEnum` / `Trainer` / `FlatSearchGame` / `Frontend` / 装配入口 / `StageId` 与规则流 / View DTO）；术语并入 `docs/game/glossary.md` |
@@ -360,9 +383,10 @@ miko_next/
 
 ## 10. 验收标准
 
-- workspace 仅含 6 个 crate，核心 `git diff` 在接入新剧本时为空
+- workspace 仅含 7 个 crate（含 2026-10-19 加入的 `umaai-update`），核心 `git diff` 在接入新剧本时为空
 - 核心 / 引擎 `cargo check` / `test` 全绿，`clippy` 无 warning
-- `umaai-core` / `umasim` 的 lib 中零终端依赖；终端依赖只在 cli；dev 重依赖只在 tools
+- `umaai-core` / `umasim` 的 lib 中零终端依赖；终端依赖只在 cli；**网络依赖只在 `umaai-update`**（且可经 `http` 特性剪掉）；dev 重依赖只在 tools
+- `umaai-update` 零引擎依赖（不依赖 `umaai-core` / `umasim` / `umaai`），`cargo test -p umaai-update --release` 与 `--no-default-features` 两档全绿、测试不联网
 - `umaai-core` 只依赖白名单库（`serde` / `serde_json` / `thiserror` / `rand` / `int-enum` / `log` 门面）；数据载入无日志副作用
 - `BasicGame` 固定种子可复现并跑完全部回合
 - baseline 可回归、`--update` 可回写

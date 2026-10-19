@@ -3,19 +3,19 @@
 本文件对照源码列出全部测试：按 crate 分节、按文件分小节、一行一条，便于定位用例与评估覆盖面。
 测试分层与判定口径的设计依据见 [`plan/miko_next_plan.md`](plan/miko_next_plan.md) 的「测试策略」节。
 
-口径（2026-10-18 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **297 passed / 0 failed / 3 ignored**；
-`cargo test --workspace --release -- --list` 共列出 **300 条**（299 个 `#[test]` + 1 个 doctest）。
+口径（2026-10-19 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **326 passed / 0 failed / 3 ignored**；
+`cargo test --workspace --release -- --list` 共列出 **329 条**（327 个 `#[test]` + 2 个 doctest）。
 
 | 层 | 位置 | 判定 | 条数 |
 |---|---|---|---|
-| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 250 |
-| L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 27 |
+| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 270 |
+| L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 35 |
 | L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 21 |
 | L4 baseline | `crates/umaai-tests/tests/baseline.rs` + `crates/umaai-tests/baselines/*.json` | 比对后返回 `Err` / 非零退出码 | 1 |
-| 文档示例 | doctest | 标记 `ignore`，不执行 | 1 |
-| **合计** | | | **300** |
+| 文档示例 | doctest | `umasim` 1 条标 `ignore` 不执行；`umaai-update` 1 条随测试执行 | 2 |
+| **合计** | | | **329** |
 
-- 分 crate：`umaai-core` 68 · `umasim` 57 · `umaai` 70 · `umaai-cli` 31 · `umaai-tools` 52 · `umaai-tests` 22。
+- 分 crate：`umaai-core` 68 · `umasim` 57 · `umaai` 70 · `umaai-cli` 31 · `umaai-tools` 52 · `umaai-tests` 22 · `umaai-update` 29。
 - 默认跳过 3 条（需手动跑 `--ignored`）：`channel_watches_real_writes`（真 watcher 写入链路）、`session_runs_on_real_channel`（真通道收局）、`define_terminal_record` 的 doctest（标记 `ignore`）。
 
 ## 运行方式
@@ -31,6 +31,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - 所有 test / binary 一律 Release 编译（工具链见 `rust-toolchain.toml`，CI 口径见 `.github/workflows/ci.yml`）。
 - 引擎的文件通道是可选特性 `file-channel`（默认开）：`cargo check -p umaai --no-default-features` 验证「无文件监听依赖」的构建，此时帧形态测试与 `tests/channel.rs` 不编不跑（`umaai-tests` 以同名特性透传）。
 - 搜索的并行后端是可选特性 `parallel`（默认开，实现在 `umasim`、由 `umaai` 透传）：`cargo test -p umasim -p umaai --release --no-default-features` 跑**串行形态**（此时 rayon 不在依赖图中，`with_parallel(true)` 被降级为串行）；主线样例面（`umaai-cli` / `umaai-tools` / `umaai-tests`）始终带默认特性，不承诺该形态。
+- 更新库的 HTTP 传输是可选特性 `http`（默认开，`umaai-update` 自带 ureq + rustls）：`cargo test -p umaai-update --release --no-default-features` 在「宿主自备传输」形态下跑（测试全走内存假源 `TestTransport`，不联网）。
 - 配置两份、同名不同位：默认层 `<数据根>/ai_config.toml`、覆盖层 `<宿主目录>/ai_config.toml`（存在才合并，无命令行开关）；**宿主目录可由入口注入**（默认当前目录），CLI / 工具用例注入临时目录，另保留「运行目录（workspace 根）不得存在 ai_config.toml」的守门断言。
 - 静态数据来源两条：目录（`DirSource`，`Data::load(root)` 是其便捷入口）与内存（`MemorySource`，收 JSON 值或 JSON 文本）；`Data::from_source(&src)` 对任意来源通用，L2 用真实数据比对两条来源的载入结果。
 - 集成测试与端到端测试不用 `assert`：经 `Checker`（`umaai-tests`）或同语义的 `Checks`（`crates/umaai/tests/common/mod.rs`）逐条打印 `ok` / `FAIL`，结束时聚合失败项返回 `Err`；加 `--nocapture` 才能看到逐条输出。
@@ -39,7 +40,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - 空剧本仓模板是**独立包**（不在 workspace 成员表内）：`cargo check --manifest-path templates/umaai-scenario/Cargo.toml --all-targets`（CI 单独一步，守验收条款「不改引擎一行即可编过」）；模板自身不设测试，接入纪律见 `docs/scenario/`。
 
 ## 目录
-- [umaai-core (59)](#umaai-core-59)
+- [umaai-core (68)](#umaai-core-68)
   - [`src/array.rs` (2)](#srcarrayrs-2)
   - [`src/crn.rs` (5)](#srccrnrs-5)
   - [`src/data/manifest.rs` (1)](#srcdatamanifestrs-1)
@@ -111,12 +112,19 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
   - [`tests/session_basic.rs` (2)](#testssession_basicrs-2)
   - [`tests/smoke.rs` (1)](#testssmokers-1)
   - [`tests/tools_smoke.rs` (7)](#teststools_smokers-7)
+- [umaai-update (29)](#umaai-update-29)
+  - [`src/channel.rs` (5)](#srcchannelrs-5)
+  - [`src/hash.rs` (3)](#srchashrs-3)
+  - [`src/manifest.rs` (7)](#srcmanifestrs-7)
+  - [`src/updater.rs` (5)](#srcupdaterrs-5)
+  - [`tests/update_flow.rs` (8)](#testsupdate_flowrs-8)
+  - `src/lib.rs` doctest (1)
 
 ---
 
-## umaai-core (59)
+## umaai-core (68)
 
-本 crate 共 59 条测试，分两类：54 条内联单元测试（按源码文件分布，逐条 `assert` 判定随机流、DTO 与纯函数口径）；5 条集成测试（载入真实 `gamedata/`，逐条 `print` 观测后经 `Checker` 聚合，有失败才返回 `Err`）。
+本 crate 共 68 条测试，分两类：62 条内联单元测试（按源码文件分布，逐条 `assert` 判定随机流、DTO 与纯函数口径）；6 条集成测试（载入真实 `gamedata/`，逐条 `print` 观测后经 `Checker` 聚合，有失败才返回 `Err`）。
 关注点：随机派生与可复现性、数据 schema 与语义校验、位段与统计原语的边界口径。
 
 ### `src/array.rs` (2)
@@ -749,6 +757,63 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_cardtest_tool` — 验测卡工具的机读行结构、基准卡零差分自证、所需局数建议、多重比较校正（缺省 none 不出校正列、Bonferroni 出更宽校正 CI）、同参数两次逐位一致，以及跨类型 / 重复卡组 / 过短基准 / 槽位越界 / 未知候选 / 缺必给选项等守卫
 - `test_cardtest_greedy` — 验逐槽贪婪：逐步机读行与步数一致、停止原因点名、最后一步组合排行留证、替换只落在同类型槽位、同参数两次逐位一致，以及重复候选 / 零步数上限 / 无可放组合三种守卫
 - `test_deck_plan` — 验自持实验计划：计划驱动 compose 与 scan（路径回显、实验变量与校正口径生效）、计划与任何实验开关互斥、同计划两次逐位一致，以及拼错键 / 缺 seed / 零局数 / 阶段与校正不搭 / cardtest 不接计划等报错
+
+## umaai-update (29)
+
+本 crate 共 29 条测试，分三类：20 条内联单元测试（协议 / 路径安全 / 哈希 / 目标与临时目录口径，逐条 `assert`）；8 条模块集成测试（`tests/update_flow.rs`，内存假源 + 真实文件系统跑完整更新流程，逐条 `print` 观测后经本地 `Checker` 聚合）；1 条 doctest（用法示例随测试编译执行）。
+关注点：渠道声明与清单协议的严格面、路径穿越与协议版本门控、无状态哈希判定、先全下后装与回滚、失败清理口径。不联网、不进 L4 基线。
+
+### `src/channel.rs` (5)
+
+**源与地址**
+- `test_source_base` — 基址去尾斜杠；空 / 全空白 / 含空白的基址都报错
+- `test_source_headers` — 附加请求头按调用顺序登记（防盗链 Referer 的承载面）
+- `test_urls` — 清单地址与文件地址拼接；文件路径逐段百分号编码（空格 / 中文）
+
+**频道声明**
+- `test_channel_id` — 频道 id 白名单（`[A-Za-z0-9_-]`）：路径分隔、`..`、空格、点号、非 ASCII 一律拒绝
+- `test_channel_schema_and_dir` — schema 门控声明可选；目标目录读取
+
+### `src/hash.rs` (3)
+
+**sha256 原语**
+- `test_known_vectors` — 空串与 `abc` 的冻结向量，改实现即红
+- `test_file_hash_matches_bytes` — 文件哈希与字节哈希一致，且跨 64 KiB 分块边界一致
+- `test_is_sha256_hex` — 64 位小写十六进制判定（长度 / 大写 / 非十六进制字符）
+
+### `src/manifest.rs` (7)
+
+**协议与字段**
+- `test_protocol_gate` — 协议版本不认识即拒绝并提示升级程序
+- `test_unknown_field_tolerated_missing_field_rejected` — 未知字段宽容忽略（前向演进）；缺 `files` / `sha256` 即报错
+- `test_empty_hash_format_and_duplicate` — 空文件表、非 64 位小写十六进制、路径重复三种都要拒绝
+- `test_path_safety` — 路径安全：绝对路径 / `..` / `.` / 空段 / 反斜杠 / 盘符逐项拒绝，合法相对路径通过
+
+**发布侧生成**
+- `test_build_is_deterministic_and_skips_manifest` — 扫描生成：稳定有序、跳过 `update.json` 自身、逐文件记哈希
+- `test_json_round_trip` — 写盘文本带换行，读回与内存值相等
+- `test_build_rejects_symlink` — 发布目录里的符号链接报错（发布目录被动过手脚要看得见）
+
+### `src/updater.rs` (5)
+
+**口径原语**
+- `test_options_temp_root` — 临时目录根固定落在 `<工作目录>/.umaai-update`
+- `test_staging_path` — 暂存名与目标同目录（保证 rename 不跨设备）
+- `test_local_matches` — 一致性判定：内容相同命中；大小不符 / 哈希不符 / 缺文件 / 同名目录都不算命中
+- `test_schema_gate` — schema 门控三态：相等放行、不等报错、未声明报错
+- `test_check_up_to_date` — 本地与清单逐项一致即判最新，待更新字节数为 0
+
+### `tests/update_flow.rs` (8)
+
+**端到端流程（假源 + 真文件系统）**
+- `test_first_full_update` — 空目录全量安装（含子目录路径）、成功后临时目录被删除、复跑判最新
+- `test_only_changed_file_is_fetched` — 只拉变化文件：请求清单留证（含变化文件、不含已一致文件）
+- `test_corrupted_download_leaves_target_untouched` — 下载内容与清单哈希不符即失败：目标目录一个字节不动，临时目录保留
+- `test_channels_are_independent` — 一个频道清单取不到只让该频道失败，另一频道照常更新
+- `test_schema_gate_blocks_install` — schema 不一致在下载前拦截，不落文件、不留临时目录
+- `test_install_failure_rolls_back` — 替换失败（目标路径被目录占住）时，先前替换的文件被回滚删除
+- `test_progress_events` — 每个文件都有 `0/total` 起始与 `total/total` 结束的进度回调
+- `test_custom_transport` — 宿主自备 `Transport` 实现可直接接入（库只要求一个方法）
 
 ## 维护约定
 

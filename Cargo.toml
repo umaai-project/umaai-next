@@ -7,8 +7,9 @@ members = [
     "crates/umaai-cli",
     "crates/umaai-tools",
     "crates/umaai-tests",
+    "crates/umaai-update",
 ]
-# 空剧本仓模板不进 workspace（验收条款「workspace 仅含 6 个 crate」）；
+# 空剧本仓模板不进 workspace（验收条款「workspace 仅含 7 个 crate」）；
 # 它是独立包，用 `cargo check --manifest-path templates/umaai-scenario/Cargo.toml` 单独守门
 exclude = ["templates"]
 
@@ -24,6 +25,8 @@ umasim = { path = "crates/umasim" }
 umaai = { path = "crates/umaai" }
 umaai-cli = { path = "crates/umaai-cli" }
 umaai-tools = { path = "crates/umaai-tools" }
+# 分发客户端公共库：**不在引擎依赖链上**（引擎与剧本都不依赖它），宿主入口按需引用
+umaai-update = { path = "crates/umaai-update" }
 
 # 轻量基础依赖（核心层仅允许此类；终端/计算/网络重依赖不得进入核心层）
 # 版本按当前最新已发布版本钉下限（`cargo add` 不支持写 workspace 依赖，故直接登记）
@@ -41,9 +44,12 @@ rand_distr = { version = "0.5.1", features = ["serde"] }
 rayon = "1.12.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.10.9"
 tabled = { version = "0.22.0", features = ["ansi"] }
 thiserror = "2.0.21"
 toml = "0.9.12"
+# 网络面只在 umaai-update（分发客户端）里出现，且可经特性剪掉（`http` 默认开）
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 
 [profile.release]
 opt-level = 3

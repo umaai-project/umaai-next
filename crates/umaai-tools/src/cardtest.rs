@@ -420,7 +420,7 @@ fn greedy_pairs(deck: &[u32], types: &[i32], candidates: &[Candidate], allow: bo
         if !allow && !(0..5).contains(&cand.card_type) {
             continue;
         }
-        for slot in 0..deck.len() {
+        for (slot, _) in deck.iter().enumerate() {
             if !allow && !(0..5).contains(&types[slot]) {
                 continue;
             }

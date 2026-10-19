@@ -1,0 +1,18 @@
+[package]
+name = "umaai-update"
+version.workspace = true
+edition.workspace = true
+description = "分发客户端公共库：频道清单协议 / 传输 / 校验 / 安装（数据更新）"
+publish = false
+
+[features]
+# 默认带 HTTP 传输（ureq + rustls）；宿主自备传输时可 `default-features = false` 剪掉
+default = ["http"]
+http = ["dep:ureq"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+ureq = { workspace = true, optional = true }
