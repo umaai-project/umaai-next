@@ -97,7 +97,7 @@ pub fn hint_attr_event(train: usize, person_index: usize) -> Result<EventData> {
     if train >= 5 {
         return Err(anyhow!("train越界: {train}"));
     }
-    let train_name = &cons.train_names[train];
+    let train_name = cons.train_name(train);
     let value = ActionValue {
         status_pt: cons.hint_event_value[train],
         friendship: 5,

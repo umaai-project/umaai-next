@@ -12,7 +12,6 @@ use enum_iterator::Sequence;
 use rand::Rng;
 use rand::rngs::StdRng;
 use rand::seq::IndexedRandom;
-use rand_distr::{Distribution, weighted::WeightedIndex};
 use umaai_core::gamedata::EventData;
 use umaai_core::rng::{StrategyRng, StreamTag, derive_seed};
 use umaai_core::{AttributeArray, Data, Ill};
@@ -411,9 +410,9 @@ impl Game for BasicGame {
                     return events;
                 }
             }
-            // 之后处理一般随机事件（分布与旧实现同一条 WeightedIndex 采样路径）
-            let dist = WeightedIndex::new(data.consts.get_event_distribution()).expect("事件分布权重恒合法");
-            match dist.sample(rng) {
+            // 之后处理一般随机事件（热路径零堆分配分桶，与旧 WeightedIndex 抽样序列逐位一致）
+            let dist = data.consts.get_event_distribution();
+            match crate::game::sample_bucket(&dist, rng).expect("事件分布权重恒合法") {
                 0 => {
                     // 支援卡事件. 再精细一点模拟 后一段事件发生次数不能多于前一段事件
                     let card_event_times: Vec<_> = [8001, 8002, 8003]
@@ -515,7 +514,8 @@ impl Game for BasicGame {
     }
 
     fn deyilv(&mut self, person_index: i32) -> f32 {
-        // 人头下标 < 卡组长度 = 支援卡人头（依次对位 deck[i]）
+        // 布局契约：卡片人头占 persons 前缀（热路径 O(1) 直取，见 docs/scenario/contracts.md）；
+        // 前缀之外（理事长 / 记者 / 剧本追加）与负数哨兵（不出现）不贡献
         if person_index >= 0 && (person_index as usize) < self.deck.len() {
             // `calc_training_effect` 返回 owned cumulative——先取出 `deyilv`
             // 后直接 move 进 `self.deck[i].effect`（避免 clone）。
@@ -576,12 +576,42 @@ impl Game for BasicGame {
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
+    use std::sync::Once;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::game::PersonType;
 
     use super::*;
     use crate::testutil::RACE_GRADES;
     use umaai_core::testing::data_root;
+
+    /// 诊断日志计数（只数 target 为 "diagnostic" 的记录，避免与其它日志混计）
+    static DIAG_RECORDS: AtomicUsize = AtomicUsize::new(0);
+    /// 计数日志器的安装标志（每进程只装一次）
+    static DIAG_LOGGER: Once = Once::new();
+
+    /// 计数 "diagnostic" 目标日志的测试日志器（观察 diag! 是否真的产出记录）
+    struct DiagCounter;
+
+    impl log::Log for DiagCounter {
+        fn enabled(&self, meta: &log::Metadata<'_>) -> bool {
+            meta.target() == "diagnostic"
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if record.target() == "diagnostic" {
+                DIAG_RECORDS.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        fn flush(&self) {}
+    }
+
+    /// 安装计数日志器并开 info 级别（幂等；本 crate 测试不装其它日志器）
+    fn install_diag_counter() {
+        DIAG_LOGGER.call_once(|| {
+            let _ = log::set_boxed_logger(Box::new(DiagCounter));
+            log::set_max_level(log::LevelFilter::Info);
+        });
+    }
 
     /// 测试用训练员（决策契约的最小实现）
     ///
@@ -741,6 +771,43 @@ mod tests {
         Ok(())
     }
 
+    /// 层1：布局契约守门——卡片前缀逐槽同序，尾部追加不破坏前缀
+    ///
+    /// 热路径（训练加成 / 得意率）按下标直取卡组依赖本不变式；违反即红。
+    #[test]
+    fn test_person_layout_contract() -> Result<()> {
+        Data::init(data_root()?)?;
+        let decks: [&[u32]; 3] = [
+            &[302424, 302464, 302484, 302564, 302574],
+            &[302424, 302464, 302484, 302564, 302574, 302644],
+            &[302424, 302464, 302484, 302564, 302574, 302644, 302704, 302974],
+        ];
+        for ids in decks {
+            let mut game = BasicGame::newgame(101901, ids, InheritInfo::default(), &RACE_GRADES)?;
+            assert_eq!(game.persons.len(), ids.len() + 1, "卡片 + 理事长");
+            for slot in 0..ids.len() {
+                assert_eq!(
+                    game.persons[slot].card_id,
+                    Some(game.deck[slot].card_id),
+                    "前缀破坏：persons[{slot}] 应与卡组槽 {slot} 同卡"
+                );
+                assert!(game.persons[slot].card_id.is_some(), "卡片人头的 card_id 不得为空");
+            }
+            // 剧本形态的尾部追加（记者 + 剧本占位人物）后，前缀不变式必须保持
+            game.add_person(BasePerson::reporter());
+            game.add_person(BasePerson::default());
+            for slot in 0..ids.len() {
+                assert_eq!(
+                    game.persons[slot].card_id,
+                    Some(game.deck[slot].card_id),
+                    "尾部追加不得破坏卡片前缀（槽 {slot}）"
+                );
+            }
+            assert_eq!(game.persons.len(), ids.len() + 3);
+        }
+        Ok(())
+    }
+
     /// 层1：点击事件的归属按类型动态查——8 卡局里理事长在第 9 位，数据里写死的 6 是错的
     #[test]
     fn test_click_event_person_target() -> Result<()> {
@@ -853,6 +920,33 @@ mod tests {
         assert!(game.uma.flags.ill.is_empty(), "治病应清空生病位集");
         assert!(!game.uma.flags.bad_trainer);
         assert_eq!(game.uma.vital, (vital_before + 20).min(game.uma.max_vital));
+        Ok(())
+    }
+
+    /// 层2：通用机制的 diag 埋点在真实局中产出日志（只认 "diagnostic" target 的记录）
+    ///
+    /// 持搜索串行锁跑整局：诊断开关是进程级的，须排除并行搜索测试的 guard 互踩
+    /// （会把开关留死在关闭态，计数归零）；锁内计数不受任何干扰。
+    #[test]
+    fn test_diag_sites_fire_in_real_game() -> Result<()> {
+        // 锁中毒只可能来自持锁测试 panic，无恢复意义
+        let _serial = crate::testutil::SEARCH_SERIAL.lock().unwrap();
+        Data::init(data_root()?)?;
+        install_diag_counter();
+        let before = DIAG_RECORDS.load(Ordering::Relaxed);
+        let mut game = BasicGame::newgame(
+            101901,
+            &[302424, 302464, 302484, 302564, 302574, 302644],
+            InheritInfo::default(),
+            &RACE_GRADES,
+        )?;
+        game.set_rule_master(7);
+        game.run_full_game(&RaceFirstTrainer, &mut StdRng::seed_from_u64(7))?;
+        let fired = DIAG_RECORDS.load(Ordering::Relaxed) - before;
+        assert!(
+            fired > 100,
+            "整局应产出足量机制诊断日志（事件 / 羁绊 / 训练后处理），实际 {fired} 条"
+        );
         Ok(())
     }
 }

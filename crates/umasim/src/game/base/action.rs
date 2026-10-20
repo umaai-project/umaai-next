@@ -4,7 +4,6 @@ use std::fmt::Display;
 
 use anyhow::{Result, anyhow};
 use rand::Rng;
-use rand_distr::{Distribution, weighted::WeightedIndex};
 use serde::{Deserialize, Serialize};
 use umaai_core::gamedata::ActionValue;
 use umaai_core::{Data, Ill};
@@ -67,9 +66,10 @@ impl BaseAction {
             };
             game.uma.add_value(&value);
         } else {
-            let weights = WeightedIndex::new(&Data::get()?.consts.rest_probs)?;
+            // 热路径零堆分配分桶（与 WeightedIndex 抽样序列逐位一致）
+            let weights = &Data::get()?.consts.rest_probs;
             let mut value = ActionValue::default();
-            match weights.sample(rng) {
+            match crate::game::sample_bucket(weights, rng)? {
                 0 => {
                     value.vital = 30;
                     game.uma.add_value(&value);

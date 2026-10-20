@@ -5,6 +5,7 @@
 use anyhow::{Result, bail};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+use std::sync::Mutex;
 use umaai_core::Data;
 use umaai_core::gamedata::EventChoice;
 use umaai_core::testing::data_root;
@@ -12,6 +13,13 @@ use umaai_core::testing::data_root;
 use crate::game::base::basic::{BasicAction, BasicGame};
 use crate::game::base::stage::BasicStage;
 use crate::game::{Game, InheritInfo, Trainer};
+
+/// 搜索 / 诊断开关串行锁
+///
+/// `FlatSearch` 的 rollout 静默 `DiagGuard` 是**进程级**开关：不同线程的 guard 并行
+/// 嵌套会互相踩掉对方的恢复值，可能把开关**留死在错误状态**（诊断输出全局消失）。
+/// 所有**跑搜索**（从而持有 guard）与**观察诊断开关效果**的测试必须持本锁串行执行。
+pub static SEARCH_SERIAL: Mutex<()> = Mutex::new(());
 
 /// 比赛等级表夹具（与旧仓默认 72 项一致）
 pub const RACE_GRADES: [i32; 72] = [

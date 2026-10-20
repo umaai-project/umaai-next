@@ -175,15 +175,7 @@ impl<W: Write> PrintFrontend<W> {
 
     /// 五维轴名（静态数据缺失时退化为下标）
     fn axis_names(&self) -> Vec<String> {
-        (0..5)
-            .map(|i| {
-                self.consts
-                    .train_names
-                    .get(i)
-                    .cloned()
-                    .unwrap_or_else(|| format!("#{i}"))
-            })
-            .collect()
+        (0..5).map(|i| self.consts.train_name(i)).collect()
     }
 }
 

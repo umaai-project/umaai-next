@@ -3,19 +3,19 @@
 本文件对照源码列出全部测试：按 crate 分节、按文件分小节、一行一条，便于定位用例与评估覆盖面。
 测试分层与判定口径的设计依据见 [`plan/miko_next_plan.md`](plan/miko_next_plan.md) 的「测试策略」节。
 
-口径（2026-10-19 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **332 passed / 0 failed / 3 ignored**；
-`cargo test --workspace --release -- --list` 共列出 **335 条**（333 个 `#[test]` + 2 个 doctest）。
+口径（2026-10-20 实测，stable 工具链 Release 模式）：`cargo test --workspace --release` → **339 passed / 0 failed / 3 ignored**；
+`cargo test --workspace --release -- --list` 共列出 **342 条**（340 个 `#[test]` + 2 个 doctest）。
 
 | 层 | 位置 | 判定 | 条数 |
 |---|---|---|---|
-| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 276 |
+| L1 单元 | `crates/<crate>/src/`（内联 `#[cfg(test)]`） | `assert` | 283 |
 | L2 模块集成 | `crates/<crate>/tests/` | print + `Checker` / `Checks`（失败返回 `Err`） | 35 |
 | L3 跨 crate 端到端 | `crates/umaai-tests/tests/` | print + `Checker`（失败返回 `Err`） | 21 |
 | L4 baseline | `crates/umaai-tests/tests/baseline.rs` + `crates/umaai-tests/baselines/*.json` | 比对后返回 `Err` / 非零退出码 | 1 |
 | 文档示例 | doctest | `umasim` 1 条标 `ignore` 不执行；`umaai-update` 1 条随测试执行 | 2 |
-| **合计** | | | **335** |
+| **合计** | | | **342** |
 
-- 分 crate：`umaai-core` 68 · `umasim` 63 · `umaai` 70 · `umaai-cli` 31 · `umaai-tools` 52 · `umaai-tests` 22 · `umaai-update` 29。
+- 分 crate：`umaai-core` 71 · `umasim` 67 · `umaai` 70 · `umaai-cli` 31 · `umaai-tools` 52 · `umaai-tests` 22 · `umaai-update` 29。
 - 默认跳过 3 条（需手动跑 `--ignored`）：`channel_watches_real_writes`（真 watcher 写入链路）、`session_runs_on_real_channel`（真通道收局）、`define_terminal_record` 的 doctest（标记 `ignore`）。
 
 ## 运行方式
@@ -40,34 +40,34 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - 空剧本仓模板是**独立包**（不在 workspace 成员表内）：`cargo check --manifest-path templates/umaai-scenario/Cargo.toml --all-targets`（CI 单独一步，守验收条款「不改引擎一行即可编过」）；模板自身不设测试，接入纪律见 `docs/scenario/`。
 
 ## 目录
-- [umaai-core (68)](#umaai-core-68)
+- [umaai-core (71)](#umaai-core-71)
   - [`src/array.rs` (2)](#srcarrayrs-2)
   - [`src/crn.rs` (5)](#srccrnrs-5)
   - [`src/data/manifest.rs` (1)](#srcdatamanifestrs-1)
   - [`src/data/source.rs` (2)](#srcdatasourcers-2)
   - [`src/diag.rs` (4)](#srcdiagrs-4)
   - [`src/error.rs` (2)](#srcerrorrs-2)
-  - [`src/flags.rs` (4)](#srcflagsrs-4)
+  - [`src/flags.rs` (6)](#srcflagsrs-6)
   - [`src/gamedata/card.rs` (2)](#srcgamedatacardrs-2)
   - [`src/gamedata/constants.rs` (3)](#srcgamedataconstantsrs-3)
-  - [`src/gamedata/event.rs` (4)](#srcgamedataeventrs-4)
+  - [`src/gamedata/event.rs` (5)](#srcgamedataeventrs-5)
   - [`src/gamedata/uma.rs` (3)](#srcgamedataumars-3)
   - [`src/race_mask.rs` (4)](#srcrace_maskrs-4)
   - [`src/rng.rs` (10)](#srcrngrs-10)
   - [`src/stats.rs` (16)](#srcstatsrs-16)
   - [`tests/data_load.rs` (6)](#testsdata_loadrs-6)
-- [umasim (57)](#umasim-57)
-  - [`src/game/base/basic.rs` (8)](#srcgamebasebasicrs-8)
+- [umasim (65)](#umasim-65)
+  - [`src/game/base/basic.rs` (10)](#srcgamebasebasicrs-10)
   - [`src/game/base/stage.rs` (2)](#srcgamebasestagers-2)
   - [`src/game/base/mod.rs` (18)](#srcgamebasemodrs-18)
   - [`src/game/inherit.rs` (1)](#srcgameinheritrs-1)
   - [`src/game/stage.rs` (1)](#srcgamestagers-1)
   - [`src/game/support_card.rs` (4)](#srcgamesupport_cardrs-4)
   - [`src/game/mod.rs` (1)](#srcgamemodrs-1)
-  - [`src/game/traits.rs` (1)](#srcgametraitsrs-1)
+  - [`src/game/traits.rs` (2)](#srcgametraitsrs-2)
   - [`src/game/uma.rs` (6)](#srcgameumars-6)
   - [`src/search/config.rs` (2)](#srcsearchconfigrs-2)
-  - [`src/search/flat_search.rs` (13)](#srcsearchflat_searchrs-13)
+  - [`src/search/flat_search.rs` (14)](#srcsearchflat_searchrs-14)
   - [`src/search/result.rs` (3)](#srcsearchresultrs-3)
   - [`src/search/terminal.rs` (3)](#srcsearchterminalrs-3)
 - [umaai (70)](#umaai-70)
@@ -122,9 +122,9 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 ---
 
-## umaai-core (68)
+## umaai-core (71)
 
-本 crate 共 68 条测试，分两类：62 条内联单元测试（按源码文件分布，逐条 `assert` 判定随机流、DTO 与纯函数口径）；6 条集成测试（载入真实 `gamedata/`，逐条 `print` 观测后经 `Checker` 聚合，有失败才返回 `Err`）。
+本 crate 共 71 条测试，分两类：65 条内联单元测试（按源码文件分布，逐条 `assert` 判定随机流、DTO 与纯函数口径）；6 条集成测试（载入真实 `gamedata/`，逐条 `print` 观测后经 `Checker` 聚合，有失败才返回 `Err`）。
 关注点：随机派生与可复现性、数据 schema 与语义校验、位段与统计原语的边界口径。
 
 ### `src/array.rs` (2)
@@ -171,13 +171,15 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_error_display` — 三类错误文案含路径、原因与定位串
 - `test_error_source_chain` — 解析错误暴露底层解析器为错误源
 
-### `src/flags.rs` (4)
+### `src/flags.rs` (6)
 
 **生病位集**
 - `test_ill_bits` — 置位、清位、包含查询与裸位往返
 - `test_ill_kinds_disjoint` — 具名种类位互不重叠，并集等于全种类位
 - `test_ill_serde` — 布尔与整数两种输入形态解析一致，越界报错
 - `test_event_flags_serde` — 事件数据里的布尔生病项解析为通配位
+- `test_ill_display` — 病位集纯文本形态：具名位以「、」相连、空集为空串
+- `test_flags_display` — 状态标识纯文本形态：计数随括号、生病嵌套、全默认为空串
 
 ### `src/gamedata/card.rs` (2)
 
@@ -192,11 +194,12 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_rank_name` — 评价名按分数线取档，两端饱和
 - `test_event_distribution` — 事件分布前三项按表取值，第四项取剩余
 
-### `src/gamedata/event.rs` (4)
+### `src/gamedata/event.rs` (5)
 
 **事件 DTO**
 - `test_trigger_type` — 触发类型按标签解析，缺省为代码事件
 - `test_choice_result` — 选项结果数值与枚举双向一致，构造即必定触发
+- `test_action_value_display` — 数值纯文本摘要：零字段省略、字段次序固定、轴名缺省退化下标（对全局数据两种状态自适应断言）
 - `test_defaults_and_empty_choices` — 缺省字段补齐，空选项组不 panic
 - `test_collection_shape` — 事件表五个分区的键名与数据形状
 
@@ -271,17 +274,18 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_validate_rejects_broken_data` — 破坏关键表后被语义校验拒绝
 - `test_manifest_version_gate` — 清单版本与程序不一致时载入被拒
 
-## umasim (57)
+## umasim (67)
 
-本 crate 共 53 条 `src/**` 内联单元测试（`#[cfg(test)] mod tests`，逐条 `assert` 判定）。
-覆盖两个面：`game` 的规则数值口径（构造、继承、卡牌效果、状态位集、评分分量）与 `search` 的搜索契约（可复现、CRN 对齐、预算分配、入口守门）。
+本 crate 共 66 条 `src/**` 内联单元测试（`#[cfg(test)] mod tests`，逐条 `assert` 判定）＋ 1 条标 `ignore` 的 doctest。
+覆盖两个面：`game` 的规则数值口径（构造、继承、卡牌效果、状态位集、评分分量）、`search` 的搜索契约（可复现、CRN 对齐、预算分配、入口守门）与诊断静默边界。
 
-### `src/game/base/basic.rs` (8)
+### `src/game/base/basic.rs` (10)
 
 **开局与端到端**
 - `test_newgame` — 冒烟：固定种子跑满全 78 回合，输出评分与 PT 供基线固化
 - `test_variable_deck_length` — 五张卡的短卡组也能构造并跑满整局，人数为卡数加理事长
 - `test_person_index_lookup` — 非卡人头按身份定位：理事长紧随卡片之后、记者按类型查，8 卡局里理事长落在第 9 位（不依赖固定下标）
+- `test_person_layout_contract` — 布局契约守门：卡片前缀逐槽同序（跨 5/6/8 卡三档）、尾部追加不破坏前缀（热路径按下标直取依赖本不变式）
 - `test_click_event_person_target` — 点击理事长 / 记者的事件归属按类型动态查（8 卡局里数据写死的 6/7 会指错人）
 - `test_friend_event_attribution` — 友人事件没带人头下标时按友人身份归属；故意把人头插到卡片之前使两套下标错位，仍命中友人并同步卡面羁绊
 
@@ -289,6 +293,9 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_friend_outing_steps` — 友人出行按段占用次数、未用段保留，并挂入待触发事件队列
 - `test_aijiao_friendship_unified` — 爱娇对所有正向羁绊统一加 2，训练与事件同一出口，负向不减
 - `test_clinic_clears_ill` — 治病清空全部病位与不擅长训练，并回复体力且不超上限
+
+**诊断埋点**
+- `test_diag_sites_fire_in_real_game` — 通用机制 diag 埋点在整局中真实产出日志（持搜索串行锁排除 guard 互踩；计数只认 "diagnostic" target）
 
 ### `src/game/base/stage.rs` (2)
 
@@ -351,9 +358,10 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 
 - `test_friend` — 友人卡按稀有度与突破等级构造，加成字段来自卡面数据
 
-### `src/game/traits.rs` (1)
+### `src/game/traits.rs` (2)
 
-- `test_sample_bucket_matches_weighted_index` — 零分配分桶采样与加权索引逐位等价，守住数值不变
+- `test_sample_bucket_matches_weighted_index` — 零分配分桶采样与加权索引逐位等价（整数切片多形态），守住数值不变
+- `test_sample_bucket_f64_matches_weighted_index` — 浮点权重同构版的逐位等价（事件分布形态等案例）
 
 ### `src/game/uma.rs` (6)
 
@@ -374,7 +382,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_defaults` — 默认配置锁定既有基线，改动即视为口径变更
 - `test_builders` — 各 builder 逐字段生效
 
-### `src/search/flat_search.rs` (13)
+### `src/search/flat_search.rs` (14)
 
 **可复现性与 CRN**
 - `test_search_reproducible` — 同种子两次搜索的中选下标与各候选统计逐项一致
@@ -393,6 +401,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - `test_strict_rollout` — 严格模式让 rollout 失败冒泡，默认只计数不中断
 - `test_max_depth_rejected` — 剧本不支持截断估值时，非零深度在入口被拒
 - `test_empty_actions_rejected` — 无候选动作直接报错
+- `test_diag_suppressed_during_search` — 搜索期间诊断输出被 rollout 边界的 `DiagGuard` 静默（持搜索串行锁防 guard 互踩；恢复语义归 core 的 diag 单测守门）
 - `test_terminal_stats_accumulate` — 终局多维统计随评分累加且不参与排序
 
 ### `src/search/result.rs` (3)

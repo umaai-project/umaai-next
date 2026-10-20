@@ -8,8 +8,10 @@ use crate::game::{Person, PersonType, SupportCard};
 /// 训练人头信息（动态）
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BasePerson {
-    /// 人头顺序。**不保证与卡组槽位同序**（剧本友人卡可能推迟加入）。
-    /// 需要由人头访问卡组时走 `Game::deck_index_of` 反查，不要拿本字段当卡组下标。
+    /// 人头顺序。布局契约（见 `docs/scenario/contracts.md`）：`persons[0..卡组长度]` 与 `deck`
+    /// 逐槽同序（晚加入的卡组人物按「开局建人头、回合激活」处理，不中途插队）；
+    /// 非卡人头只在尾部追加、下标随卡数与追加顺序浮动——定位一律反查
+    /// （`person_index_of_type` / `Game::deck_index_of`），不要写死下标。
     pub person_index: i32,
     /// 人头类型
     pub person_type: PersonType,

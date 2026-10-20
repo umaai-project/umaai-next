@@ -1,14 +1,16 @@
 //! 事件数据（events.json）的纯 schema/DTO
 //!
-//! 含选项数值、触发类型与状态增减；呈现（`explain`）归 `umaai-cli`，
+//! 含选项数值、触发类型与状态增减。人读形态分两层：纯文本 [`fmt::Display`]
+//! （平台无关的值形态）在本层，富呈现（着色 / 表格）归 `umaai-cli`；
 //! 依赖全局数据的语义构造（红点 / 加练事件）归 `umasim`。
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
 
-use crate::{Array6, flags::UmaFlags};
+use crate::{Array6, Data, flags::UmaFlags};
 
 /// 事件触发类型
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -64,6 +66,44 @@ impl ActionValue {
         }
         self
     }
+}
+
+impl fmt::Display for ActionValue {
+    /// 紧凑增减摘要：`速+12 PT+7 体-20 羁绊+7`（零字段省略，全零为空串）
+    ///
+    /// 轴名取静态数据（不在代码里写第二份）；数据未载入时退化为下标（`#0+12`）。
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts: Vec<String> = vec![];
+        for (i, value) in self.status_pt.iter().enumerate().take(5) {
+            if *value != 0 {
+                parts.push(format!("{}{value:+}", axis_name(i)));
+            }
+        }
+        if self.status_pt[5] != 0 {
+            parts.push(format!("PT{:+}", self.status_pt[5]));
+        }
+        if self.vital != 0 {
+            parts.push(format!("体{:+}", self.vital));
+        }
+        if self.max_vital != 0 {
+            parts.push(format!("体上限{:+}", self.max_vital));
+        }
+        if self.motivation != 0 {
+            parts.push(format!("干{:+}", self.motivation));
+        }
+        if self.hint_level != 0 {
+            parts.push(format!("红点{:+}", self.hint_level));
+        }
+        if self.friendship != 0 {
+            parts.push(format!("羁绊{:+}", self.friendship));
+        }
+        f.write_str(&parts.join(" "))
+    }
+}
+
+/// 训练轴名：经 `super::GameConstants::train_name`（唯一出口），未载入退化为下标
+fn axis_name(i: usize) -> String {
+    Data::try_get().map_or_else(|| format!("#{i}"), |d| d.consts.train_name(i))
 }
 
 /// 事件选项结果
@@ -216,6 +256,28 @@ mod tests {
         let made = EventChoice::from_action_value(&ActionValue::default(), ChoiceResult::Success);
         assert_eq!(made.result, ChoiceResult::Success as i32);
         assert_eq!(made.prob, 100);
+    }
+
+    /// 层1：数值纯文本摘要——零字段省略、全零为空串、字段次序固定
+    #[test]
+    fn test_action_value_display() {
+        // 轴名是否可取决于全局数据是否已载入（同进程其它测试可能已 init），
+        // 两种形态都合法：具名（数据在）或下标（数据不在），断言自适应两者
+        let named = Data::try_get().is_some();
+        let v = ActionValue {
+            status_pt: [12, 0, 0, 0, 0, 7],
+            vital: -20,
+            motivation: 1,
+            friendship: 7,
+            ..ActionValue::default()
+        };
+        let want = if named {
+            "速+12 PT+7 体-20 干+1 羁绊+7"
+        } else {
+            "#0+12 PT+7 体-20 干+1 羁绊+7"
+        };
+        assert_eq!(v.to_string(), want);
+        assert_eq!(ActionValue::default().to_string(), "");
     }
 
     /// 层1：缺省字段补齐、空选项组不 panic

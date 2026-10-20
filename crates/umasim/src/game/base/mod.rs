@@ -15,9 +15,9 @@ use anyhow::{Result, anyhow};
 use hashbrown::{HashMap, HashSet};
 use rand::Rng;
 use rand::seq::IndexedRandom;
-use umaai_core::gamedata::{ActionValue, EventChoice, EventData, TriggerType};
+use umaai_core::gamedata::{ActionValue, ChoiceResult, EventChoice, EventData, TriggerType};
 use umaai_core::rng::{EventRng, StreamTag, TurnFixedRng, derive_seed};
-use umaai_core::{Array5, AttributeArray, Data, split_status};
+use umaai_core::{Array5, AttributeArray, Data, diag, split_status};
 
 pub use action::*;
 pub use person::*;
@@ -152,7 +152,9 @@ impl BaseGame {
     /// 决赛期（72–77）只有 73/75/77 的生涯赛，等级表也不覆盖 72 以后。
     pub fn push_race_event(&mut self, scale: f64, pt_rate: f64) -> Result<()> {
         let mut event = if self.uma.is_race_turn(self.turn) {
-            Data::get()?.system_event("race_career")?.clone()
+            let event = Data::get()?.system_event("race_career")?.clone();
+            diag!(">> 比赛 T{} 生涯 scale={scale:.2} pt_rate={pt_rate:.2}", self.turn);
+            event
         } else {
             let grade = self.race_grade().ok_or_else(|| {
                 anyhow!(
@@ -161,7 +163,12 @@ impl BaseGame {
                     self.race_grades.len()
                 )
             })?;
-            Data::get()?.system_event(&format!("race_g{grade}"))?.clone()
+            let event = Data::get()?.system_event(&format!("race_g{grade}"))?.clone();
+            diag!(
+                ">> 比赛 T{} 自选G{grade} scale={scale:.2} pt_rate={pt_rate:.2}",
+                self.turn
+            );
+            event
         };
         // 系数一律 f64（新仓口径），面板值 round 后写回
         event.map_status(|x| (f64::from(x) * scale).round() as i32);
@@ -181,15 +188,22 @@ impl BaseGame {
     /// 爱娇的全局 +2 才能只在一处施加。
     pub fn add_friendship<P: crate::game::Person>(&mut self, persons: &mut [P], person_index: usize, value: i32) {
         if person_index >= persons.len() {
+            diag!(
+                "羁绊入账被丢弃：人头下标 {person_index} 越界（共 {} 人头）",
+                persons.len()
+            );
             return;
         }
-        let value = if value > 0 && self.uma.flags.aijiao {
-            value + 2
-        } else {
-            value
-        };
-        let new_value = (persons[person_index].friendship() + value).min(100);
+        let aijiao = value > 0 && self.uma.flags.aijiao;
+        let delta = if aijiao { value + 2 } else { value };
+        let old = persons[person_index].friendship();
+        let new_value = (old + delta).min(100);
         persons[person_index].set_friendship(new_value);
+        diag!(
+            "羁绊 #{person_index} {delta:+} -> {new_value}{}{}",
+            if aijiao { "（含爱娇+2）" } else { "" },
+            if old + delta > 100 { "（封顶）" } else { "" },
+        );
         // 卡面羁绊同步：按 card_id 反查槽位
         if let Some(card_id) = persons[person_index].card_id()
             && let Some(slot) = self.deck.iter().position(|card| card.card_id == card_id)
@@ -245,7 +259,9 @@ impl BaseGame {
             };
         }
         // 生成加练或者红点事件（人头下标 ≠ 卡组下标：按 card_id 反查卡面）
+        let mut hint_chosen: Option<i32> = None;
         if let Some(p) = hint_persons.choose(rng) {
+            hint_chosen = Some(*p);
             let attr_prob = Data::get()?.event_prob("hint_attr")?;
             let card = persons[*p as usize]
                 .card_id()
@@ -262,7 +278,9 @@ impl BaseGame {
             self.unresolved_events.push(hint_event);
         }
         let extra_train_prob = Data::get()?.event_prob("extra_train")?;
+        let mut extra_train = false;
         if !self.is_xiahesu() && rng.random_bool(extra_train_prob) {
+            extra_train = true;
             let mut event = crate::game::extra_training_event(train)?;
             if let Some(yayoi_index) = persons
                 .iter()
@@ -306,6 +324,26 @@ impl BaseGame {
                 event.person_index = Some(index as i32);
             }
             self.unresolved_events.push(event);
+        }
+        // 诊断摘要：只报「生成了什么」——事件身份由 run_event 报、羁绊由 add_friendship 报
+        let mut parts: Vec<String> = vec![];
+        if let Some(p) = hint_chosen {
+            parts.push(format!("红点#{p}"));
+        }
+        if extra_train {
+            parts.push("加练".to_string());
+        }
+        if friend_clicked {
+            parts.push("友人点击".to_string());
+        }
+        if yayoi_clicked {
+            parts.push("理事长点击".to_string());
+        }
+        if reporter_clicked {
+            parts.push("记者点击".to_string());
+        }
+        if !parts.is_empty() {
+            diag!("训练后处理 训练位{train}: {}", parts.join(" "));
         }
         Ok(())
     }
@@ -475,10 +513,26 @@ impl BaseGame {
         if !event.choices.is_empty() {
             if let Some(mut choice_result) = self.random_select_choice_result(&event.choices[choice], rng) {
                 // 友人事件：应用 friend.event_bonus / vital_bonus 乘算
-                if self.friend_event_ids.contains(&event.id) {
+                let friend = self.friend_event_ids.contains(&event.id);
+                if friend {
                     Self::apply_friend_bonus(&mut choice_result.value, &self.friend);
                 }
                 self.uma.add_value(&choice_result.value);
+                // 结算叙事：结果档（普通档略）+ 入账摘要 + 友人加成注记；三者皆空不落日志
+                let mut parts: Vec<String> = vec![];
+                if let Some(result) = diag_result_note(choice_result.result) {
+                    parts.push(result.to_string());
+                }
+                let value = choice_result.value.to_string();
+                if !value.is_empty() {
+                    parts.push(format!("入账 {value}"));
+                }
+                if friend {
+                    parts.push("含友人加成".to_string());
+                }
+                if !parts.is_empty() {
+                    diag!("事件 #{} 结算: {}", event.id, parts.join(" "));
+                }
                 Some(choice_result)
             } else {
                 None
@@ -527,6 +581,27 @@ impl BaseGame {
 
     /// 结算某个事件选项（数值 + 状态）
     pub fn apply_event_choice(&mut self, choice: &EventChoice) {
+        // 结算叙事：入账摘要与状态增减（词形见 `UmaFlags` 的 `Display`）；皆空不落日志
+        let mut parts: Vec<String> = vec![];
+        let value = choice.value.to_string();
+        if !value.is_empty() {
+            parts.push(format!("入账 {value}"));
+        }
+        if let Some(add) = &choice.add_flags {
+            let words = add.to_string();
+            if !words.is_empty() {
+                parts.push(format!("+{words}"));
+            }
+        }
+        if let Some(remove) = &choice.remove_flags {
+            let words = remove.to_string();
+            if !words.is_empty() {
+                parts.push(format!("-{words}"));
+            }
+        }
+        if !parts.is_empty() {
+            diag!("事件选项结算: {}", parts.join(" "));
+        }
         self.uma.add_value(&choice.value);
         self.uma.update_flags(choice);
     }
@@ -562,6 +637,12 @@ impl BaseGame {
     pub fn check_free_race(&self) -> bool {
         for free_race in &self.uma.free_races {
             if self.turn as u32 == free_race.end_turn + 1 && self.uma.count_free_race(free_race) < free_race.count {
+                diag!(
+                    "自选比赛未达标：T{} 需 {} 场，已 {} 场",
+                    self.turn,
+                    free_race.count,
+                    self.uma.count_free_race(free_race)
+                );
                 return false;
             }
         }
@@ -576,6 +657,17 @@ impl BaseGame {
                 && self.deck.iter().zip(&last.deck).all(|(a, b)| a.card_id == b.card_id);
         }
         false
+    }
+}
+
+/// 事件结果档的诊断标签（普通档与非法值返回 `None`；词形转正见各值类型的 `Display`）
+fn diag_result_note(result: i32) -> Option<&'static str> {
+    match ChoiceResult::try_from(result) {
+        Ok(ChoiceResult::Success) => Some("成功"),
+        Ok(ChoiceResult::BigSuccess) => Some("大成功"),
+        Ok(ChoiceResult::Fail) => Some("失败"),
+        Ok(ChoiceResult::BigFail) => Some("大失败"),
+        _ => None,
     }
 }
 

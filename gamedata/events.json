@@ -672,7 +672,6 @@
             "name": "点击理事长",
             "trigger": { "type": "Code" },
             "prob": 100,
-            "person_index": 6,
             "choices": [[{
                 "value": {
                     "status_pt": [ 0, 0, 0, 0, 0, 3 ],
@@ -685,7 +684,6 @@
             "name": "点击记者",
             "trigger": { "type": "Code" },
             "prob": 100,
-            "person_index": 7,
             "choices": [[{
                 "value": {
                     "status_pt": [ 0, 0, 0, 0, 0, 0 ],
@@ -698,7 +696,6 @@
             "name": "追加训练",
             "trigger": { "type": "Code" },
             "prob": 100,
-            "person_index": 6,
             "player_select": true,
             "choices": [[{
                 "value": {

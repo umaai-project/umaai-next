@@ -663,6 +663,13 @@ mod tests {
         stub_base(action) + (seed % 997) as f64
     }
 
+    /// 搜索串行锁句柄（说明见 `testutil::SEARCH_SERIAL`：guard 是进程级开关，防并行互踩）
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        crate::testutil::SEARCH_SERIAL
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+    }
+
     /// 用桩 rollout 跑一次搜索（串行，避免线程调度影响桩计数）
     fn run_stub(cfg: SearchConfig, seed: u64) -> Result<SearchOutput<BasicAction>> {
         let game = testutil::basic_game()?;
@@ -675,6 +682,7 @@ mod tests {
     /// 层1：同种子可复现（中选下标与各候选统计逐项一致）
     #[test]
     fn test_search_reproducible() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default().with_ucb(false).with_search_n(8);
         let a = run_stub(cfg.clone(), 7)?;
         let b = run_stub(cfg, 7)?;
@@ -691,6 +699,7 @@ mod tests {
     /// 层1：换种子必须换到不同的随机未来（否则种子形同虚设）
     #[test]
     fn test_seed_actually_used() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default().with_ucb(false).with_search_n(8);
         let a = run_stub(cfg.clone(), 1)?;
         let b = run_stub(cfg, 2)?;
@@ -706,6 +715,7 @@ mod tests {
     /// 层1：均匀分配下候选顺序不影响各动作统计（每候选独立取 seeds[0..n]）
     #[test]
     fn test_action_order_invariance() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default().with_ucb(false).with_search_n(6);
         let game = testutil::basic_game()?;
         let actions = game.list_actions()?;
@@ -737,6 +747,7 @@ mod tests {
     /// 层1：有序原始分按 rollout 序号对齐，且各候选共享同一张 CRN 种子表
     #[test]
     fn test_ordered_rollouts_align_with_crn() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default()
             .with_ucb(false)
             .with_search_n(4)
@@ -766,6 +777,7 @@ mod tests {
     /// 层1：均匀分配的预算与探针计数（每候选恰好 search_n 次）
     #[test]
     fn test_uniform_budget_and_probe() -> Result<()> {
+        let _serial = serial();
         let n = 5;
         let cfg = SearchConfig::default().with_ucb(false).with_search_n(n);
         let game = testutil::basic_game()?;
@@ -794,6 +806,7 @@ mod tests {
     /// 组大小 4、预算 10 → 首轮每候选 4 次，之后按 UCB 追加，直到某候选达到 12。
     #[test]
     fn test_ucb_budget_reproducible() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default()
             .with_ucb(true)
             .with_search_n(10)
@@ -827,6 +840,7 @@ mod tests {
     /// 层1：`strict_rollout` 让失败显式报错；默认路径只计数不中断
     #[test]
     fn test_strict_rollout() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default().with_ucb(false).with_search_n(6);
         let game = testutil::basic_game()?;
         let actions = game.list_actions()?;
@@ -862,6 +876,7 @@ mod tests {
     /// 层1：并行与串行的结果逐位一致（保序收集 + 每条 rollout 独立种子）
     #[test]
     fn test_parallel_matches_serial() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default().with_ucb(false).with_search_n(16);
         let game = testutil::basic_game()?;
         let actions = game.list_actions()?;
@@ -935,6 +950,7 @@ mod tests {
     /// 层1：终局多维记录随评分一起累加（不参与排序），均值与 CRN 种子表一致
     #[test]
     fn test_terminal_stats_accumulate() -> Result<()> {
+        let _serial = serial();
         let cfg = SearchConfig::default().with_ucb(false).with_search_n(4);
         let game = testutil::basic_game()?;
         let actions = game.list_actions()?;
@@ -967,6 +983,34 @@ mod tests {
         let second = fs.simulate_common(&game, &actions[0], 42)?;
         assert_eq!(first, second, "同种子同动作的 rollout 必须逐位可复现");
         assert!(first.is_finite());
+        Ok(())
+    }
+
+    /// 层1：搜索期间诊断输出被静默（rollout 边界的 `DiagGuard`）
+    ///
+    /// 持搜索串行锁：开关是进程级的，并行 guard 互踩会污染本测试的观测值。
+    /// 「guard 释放后恢复」的语义归 `umaai-core` 的 diag 单测守门，此处不断言。
+    #[test]
+    fn test_diag_suppressed_during_search() -> Result<()> {
+        let _serial = serial();
+        let game = testutil::basic_game()?;
+        let actions = game.list_actions()?;
+        let mut rng = StdRng::seed_from_u64(31);
+        let cfg = SearchConfig::default().with_ucb(false).with_search_n(4);
+        let fs = FlatSearch::<BasicGame>::new(cfg).with_parallel(false);
+        // rollout 闭包内观测诊断开关：本测试自持 guard，观测值必须全程为 false
+        let observed = Arc::new(Mutex::new(Vec::<bool>::new()));
+        let sink = observed.clone();
+        let _out = fs.search_with(&game, &actions, &mut rng, |_g, _a, _s| {
+            sink.lock().expect("观测锁").push(umaai_core::diag::enabled());
+            Ok(0.0)
+        })?;
+        let observed = observed.lock().expect("观测锁");
+        assert!(!observed.is_empty(), "至少执行一次 rollout，否则本用例无意义");
+        assert!(
+            observed.iter().all(|on| !on),
+            "rollout 期间诊断输出必须被静默（DiagGuard 边界）"
+        );
         Ok(())
     }
 }

@@ -22,12 +22,16 @@
 `distribute_hint` / `at_trains` / `is_shining_at` / `shining_count` / `deck_index_of` / `count_training_persons`）/
 训练一族（`calc_training_buff` / `calc_training_value` / `calc_training_failure_rate` 与各自 `default_*`）。
 
-**人头定位纪律（剧本必读）**：`persons` 与 `deck` 是两个平行容器，**下标不保证相等**——剧本可以按自己的
-规则追加人头（剧本友人 / 记者 / NPC），追加后卡组下标与人头下标就错位。因此：
+**人头布局契约（剧本必读）**：`persons` 的布局遵守两条硬纪律——
 
-- 找非卡人头用 `person_index_of_type(ty)`（理事长 / 记者这类），**不要写死下标**；
-- 由卡反查人头用 `person_index_of_card(card_id)`，由人头反查卡组槽位用 `deck_index_of(person_index)`；
-- 追加人头一律**排在卡片人头之后**（引擎的 `init_persons` 同序），这样按序对位的旧路径也不会错。
+- **卡片前缀**：`persons[0..卡组长度]` 与 `deck` 逐槽同序（含友人卡）。晚加入的卡组人物
+  （友人 `turn ≥ 2`、记者 `turn ≥ 13` 可用）一律「**开局建人头 + `person_is_available` 回合激活**」，
+  不中途插队——训练加成 / 得意率等**热路径**据此按下标 O(1) 直取卡组；
+- **尾部追加**：非卡人头（理事长 / 记者 / 剧本人物 / NPC）只在尾部 `add_person` 追加（引擎
+  `init_persons` 同序）。因此**非卡人头下标随卡数与追加顺序浮动**（5 卡局理事长在 5、6 卡局在 6）：
+  定位用 `person_index_of_type(ty)`，跨容器引用按 `card_id` 走 `person_index_of_card` /
+  `deck_index_of(person_index)`（冷路径通用反查），**不要写死下标；数据表（events.json 等）
+  不得携带写死的 `person_index`**——事件归属由生成点动态定位后写入。
 
 `TrainingValueSource` 只一项：`training_basic_table()`（训练基础值表，数值是剧本资产）。
 

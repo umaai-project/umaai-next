@@ -27,10 +27,7 @@ pub fn five_status(consts: &GameConstants, five: &[i32; 5]) -> String {
         if i > 0 {
             out.push(' ');
         }
-        match consts.train_names.get(i) {
-            Some(name) => out.push_str(&format!("{name} {value}")),
-            None => out.push_str(&format!("#{i} {value}")),
-        }
+        out.push_str(&format!("{} {value}", consts.train_name(i)));
     }
     out
 }

@@ -48,6 +48,15 @@ pub struct GameConstants {
 }
 
 impl GameConstants {
+    /// 训练轴名（`train_names` 取名，越界 / 缺失退化为 `#i`）
+    ///
+    /// 轴名的唯一出口：纯文本 `Display`（`ActionValue` 增减摘要）与终端呈现
+    /// （回合行 / 五维行）共用，不在代码里写第二份。
+    #[must_use]
+    pub fn train_name(&self, i: usize) -> String {
+        self.train_names.get(i).cloned().unwrap_or_else(|| format!("#{i}"))
+    }
+
     /// 查五维属性对应的终局评分，越界饱和到表末（空表返回 0）
     pub fn status_final_score(&self, status: i32) -> i32 {
         match self.five_status_final_score.last() {

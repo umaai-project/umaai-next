@@ -1,7 +1,8 @@
 //! 局面状态标识（跨边界 DTO）
 //!
 //! 同时被事件数据（`add_flags` / `remove_flags`）、局面状态与协议层引用，故置核心层。
-//! 本模块只放数据形状与位运算；置 / 清语义归 `umasim`，呈现归 `umaai-cli`。
+//! 本模块只放数据形状与位运算；置 / 清语义归 `umasim`。人读形态分两层：
+//! 纯文本 [`fmt::Display`]（平台无关的值形态）在本层，富呈现（着色 / 表格）归 `umaai-cli`。
 
 use std::fmt;
 
@@ -69,6 +70,72 @@ impl Ill {
     /// 清位
     pub fn remove(&mut self, other: Self) {
         self.0 &= !other.0;
+    }
+}
+
+impl fmt::Display for Ill {
+    /// 置位病名以「、」相连（`变胖、熬夜`）；空集为空串
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const KINDS: [(Ill, &str); 6] = [
+            (Ill::FAT, "变胖"),
+            (Ill::SKIN, "皮肤差"),
+            (Ill::HEADACHE, "偏头痛"),
+            (Ill::LAZY, "摸鱼"),
+            (Ill::NIGHT, "熬夜"),
+            (Ill::BAD_TRAINER, "不擅长训练"),
+        ];
+        let mut parts: Vec<&str> = vec![];
+        for (bit, name) in KINDS {
+            if self.contains(bit) {
+                parts.push(name);
+            }
+        }
+        if self.contains(Ill::UNKNOWN) {
+            parts.push("未知病");
+        }
+        if self.contains(Ill::ANY) {
+            parts.push("任意病");
+        }
+        f.write_str(&parts.join("、"))
+    }
+}
+
+impl fmt::Display for UmaFlags {
+    /// 已置状态词以「、」相连（计数随括号）；全默认为空串
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts: Vec<String> = vec![];
+        if self.qiezhe {
+            parts.push("切者".into());
+        }
+        if self.xiaoqie {
+            parts.push("小切".into());
+        }
+        if self.aijiao {
+            parts.push("爱娇".into());
+        }
+        if self.good_trainer {
+            parts.push("擅长训练".into());
+        }
+        if self.bad_trainer {
+            parts.push("不擅长训练".into());
+        }
+        if self.positive_thinking_count > 0 {
+            parts.push(format!("正向思考×{}", self.positive_thinking_count));
+        }
+        if self.refresh_mind > 0 {
+            parts.push(format!("休息心得×{}", self.refresh_mind));
+        }
+        if self.lucky_count > 0 {
+            parts.push(format!("幸运体质×{}", self.lucky_count));
+        }
+        if self.doll {
+            parts.push("抓过娃娃".into());
+        }
+        if !self.ill.is_empty() {
+            let ill = self.ill;
+            parts.push(format!("生病({ill})"));
+        }
+        f.write_str(&parts.join("、"))
     }
 }
 
@@ -209,5 +276,33 @@ mod tests {
         assert_eq!(flags.ill, Ill::ANY);
         assert!(flags.bad_trainer);
         assert_eq!(UmaFlags::default().ill, Ill::NONE);
+    }
+
+    /// 层1：病位集纯文本形态（具名位相连、空集为空）
+    #[test]
+    fn test_ill_display() {
+        assert_eq!(Ill::NONE.to_string(), "");
+        let mut ill = Ill::NONE;
+        ill.insert(Ill::FAT);
+        ill.insert(Ill::NIGHT);
+        assert_eq!(ill.to_string(), "变胖、熬夜");
+        let mut wild = Ill::NONE;
+        wild.insert(Ill::UNKNOWN);
+        wild.insert(Ill::BAD_TRAINER);
+        assert_eq!(wild.to_string(), "不擅长训练、未知病");
+    }
+
+    /// 层1：状态标识纯文本形态（计数随括号、生病嵌套、全默认为空）
+    #[test]
+    fn test_flags_display() {
+        assert_eq!(UmaFlags::default().to_string(), "");
+        let mut flags = UmaFlags {
+            qiezhe: true,
+            aijiao: true,
+            positive_thinking_count: 2,
+            ..UmaFlags::default()
+        };
+        flags.ill.insert(Ill::FAT);
+        assert_eq!(flags.to_string(), "切者、爱娇、正向思考×2、生病(变胖)");
     }
 }

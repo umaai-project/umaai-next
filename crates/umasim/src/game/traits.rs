@@ -6,12 +6,16 @@
 //! 呈现 / 协议输出（`view` / 决策上下文等）不在本层，待上层阶段加回。
 
 use std::fmt::{Debug, Display};
+use std::iter::Sum;
+use std::ops::AddAssign;
 
 use anyhow::{Result, anyhow};
 use rand::Rng;
+use rand::distr::uniform::SampleUniform;
 use rand::rngs::StdRng;
 use rand_distr::{Distribution, Uniform};
 use umaai_core::Data;
+use umaai_core::diag;
 use umaai_core::gamedata::{ActionValue, EventChoice, EventData, TriggerType};
 use umaai_core::rng::EventRng;
 
@@ -164,8 +168,10 @@ pub trait Game: Clone + TrainingValueSource {
                     event.name
                 ));
             }
+            diag!("【事件】#{} {} → 选项 {}", event.id, event.name, selection + 1);
             self.apply_event(event, selection, event_rng)
         } else {
+            diag!("【事件】#{} {}", event.id, event.name);
             self.apply_event(event, 0, event_rng)
         }
     }
@@ -389,19 +395,18 @@ pub trait Game: Clone + TrainingValueSource {
         self.persons().iter().position(|p| p.person_type() == ty)
     }
 
-    /// provided: 按支援卡 `card_id` 找该卡人头在 `persons` 里的下标（[`Game::deck_index_of`] 的逆向）
+    /// provided: 按支援卡 `card_id` 找该卡人头在 `persons` 里的下标
     ///
-    /// 卡组下标与人头下标**不保证相等**（非卡人头可以插在卡片之间），
-    /// 故跨容器一律按卡 ID 反查，不按下标对位。
+    /// 非卡人头只在尾部追加、下标随卡数与追加顺序浮动，故非卡定位与跨容器引用
+    /// 一律按 `card_id` 反查（卡片前缀的按序直取见布局契约，属热路径用法）。
     fn person_index_of_card(&self, card_id: u32) -> Option<usize> {
         self.persons().iter().position(|p| p.card_id() == Some(card_id))
     }
 
-    /// provided: 人头下标 → 卡组下标
+    /// provided: 人头下标 → 卡组下标（冷路径通用反查）
     ///
-    /// `persons` 与 `deck` 是两个平行容器，下标**不保证**一一对应
-    /// （剧本友人卡可能推迟加入）。需要访问 `deck[..]` 时一律走本方法反查。
-    ///
+    /// 布局契约下卡片人头占据 `persons` 前缀、可按下标 O(1) 直取（热路径用法）；
+    /// 本方法供冷路径与防御性访问：无卡人头（理事长 / 记者 / NPC）返回 `None`。
     /// 前置条件「`deck` 内 `card_id` 唯一」由构造期保证：`BaseGame::new` 按 `card_id`
     /// 判重并拒绝重复卡组，故这里不会出现「重复卡静默命中第一张」。
     fn deck_index_of(&self, person_index: usize) -> Option<usize> {
@@ -443,12 +448,13 @@ pub trait Game: Clone + TrainingValueSource {
                     continue;
                 }
                 let person_index = *index as usize;
-                // 人头下标 ≠ 卡组下标，必须按 card_id 反查；
-                // 无卡人头（理事长 / 记者 / NPC）不贡献任何卡加成
-                let Some(deck_index) = self.deck_index_of(person_index) else {
+                // 布局契约：卡片人头占 persons 前缀，热路径按下标 O(1) 直取卡组
+                // （反查是冷路径用法）；前缀之外（理事长 / 记者 / 剧本追加 / NPC）
+                // 不贡献任何卡加成
+                if person_index >= self.deck().len() {
                     continue;
-                };
-                let card = &self.deck()[deck_index];
+                }
+                let card = &self.deck()[person_index];
                 let mut effect = card.calc_training_effect(self, train as i32);
                 // 闪彩判定用人头下标，不能用卡组下标
                 if !self.is_shining_at(person_index, train) {
@@ -552,26 +558,30 @@ pub trait Trainer<G: Game> {
     }
 }
 
-/// 5 元素 i32 权重加权采样，返回桶下标
+/// 数值权重加权采样（返回桶下标），零堆分配
 ///
-/// 与 `rand` 整数 [`WeightedIndex`](rand_distr::weighted::WeightedIndex) 抽样序列
-/// **逐位一致**：内部走同一条 `Uniform::new(0, total).sample(rng)`（Lemire 无偏
-/// 路径，rng 消费相同），桶归属用线性前缀和替代 `partition_point`（取首个累积
-/// 权重 > 采样值的下标，与 rand 的 `cumulative_weights.partition_point(|w| w <=
-/// chosen)` 同语义，末桶由 `chosen < total` 恒真兜底）。
+/// 与 `rand` [`WeightedIndex`](rand_distr::weighted::WeightedIndex) 抽样序列**逐位一致**
+/// （整数与浮点权重同构共用）：走同一条 `Uniform::new(0, total).sample(rng)`（rng 消费
+/// 相同），桶归属用线性前缀和替代 `partition_point`（取首个累积权重 > 采样值的下标，
+/// 与 rand 的 `cumulative_weights.partition_point(|w| w <= chosen)` 同语义，末桶兜底）。
 ///
-/// 与 `WeightedIndex` 的差异仅在性能面：5 元素栈数组零堆分配。
-fn sample_bucket(weights: &[i32; 5], rng: &mut impl Rng) -> Result<usize> {
-    let uniform = Uniform::new(0, weights.iter().sum::<i32>())?;
-    let chosen = uniform.sample(rng);
-    let mut acc = 0;
+/// 与 `WeightedIndex` 的差异仅在性能面：不构造累积数组、零堆分配，适合分布 /
+/// 事件抽取等 rollout 热路径；权重和非法（非正 / 非有限）时经 `Uniform` 报错，
+/// 等价性由单测同种子逐次比对守门。
+pub(crate) fn sample_bucket<X>(weights: &[X], rng: &mut impl Rng) -> Result<usize>
+where
+    X: SampleUniform + Sum + PartialOrd + AddAssign + Default + Copy,
+{
+    let total = weights.iter().copied().sum::<X>();
+    let chosen = Uniform::new(X::default(), total)?.sample(rng);
+    let mut acc = X::default();
     for (i, &w) in weights.iter().enumerate() {
         acc += w;
         if chosen < acc {
             return Ok(i);
         }
     }
-    Ok(weights.len() - 1) // 兜底：chosen < total 恒成立，末桶必然命中
+    Ok(weights.len().saturating_sub(1)) // 兜底：整数下 chosen < total 恒成立；浮点舍入可能贴到 total
 }
 
 #[cfg(test)]
@@ -583,23 +593,24 @@ mod tests {
 
     /// 零分配分桶采样与 rand 整数 `WeightedIndex` 逐位等价
     ///
-    /// 覆盖 5 个权重位的典型组合，同种子喂给新旧两条采样路径各 5 万次，
-    /// 输出必须逐次一致——守住「替换后模拟数值逐位不变」这个前提。
+    /// 覆盖 5 个权重位的典型组合与 3 位（休息分档）切片形态，同种子喂给新旧两条
+    /// 采样路径各 5 万次，输出必须逐次一致——守住「替换后模拟数值逐位不变」这个前提。
     #[test]
     fn test_sample_bucket_matches_weighted_index() -> Result<()> {
-        let cases: &[[i32; 5]] = &[
-            [100, 100, 100, 100, 100], // 无得意率加权（train_type > 4 或 deyilv=0）
-            [100, 150, 100, 100, 100], // 得意率 +50，加权位 1
-            [250, 100, 100, 100, 100], // 得意率 +150，加权位 0（首位）
-            [100, 100, 100, 100, 350], // 加权位 4（末桶）
-            [100, 100, 30, 100, 100],  // 低权重位 2（<100）
-            [140, 100, 100, 60, 100],  // 双位异常权重（防御性覆盖）
-            [100, 100, 100, 100, 100],
+        let cases: [&[i32]; 8] = [
+            &[100, 100, 100, 100, 100], // 无得意率加权（train_type > 4 或 deyilv=0）
+            &[100, 150, 100, 100, 100], // 得意率 +50，加权位 1
+            &[250, 100, 100, 100, 100], // 得意率 +150，加权位 0（首位）
+            &[100, 100, 100, 100, 350], // 加权位 4（末桶）
+            &[100, 100, 30, 100, 100],  // 低权重位 2（<100）
+            &[140, 100, 100, 60, 100],  // 双位异常权重（防御性覆盖）
+            &[18, 57, 25],              // 休息分档（rest_probs 形状，3 位切片）
+            &[90, 10],                  // 极不均衡两桶
         ];
         for (ci, weights) in cases.iter().enumerate() {
             let mut rng_new = StdRng::seed_from_u64(42);
             let mut rng_old = rng_new.clone();
-            let dist = WeightedIndex::new(weights).unwrap();
+            let dist = WeightedIndex::new(weights.iter().copied()).unwrap();
             let mut matched = 0usize;
             for _ in 0..50_000 {
                 let new_bucket = sample_bucket(weights, &mut rng_new)?;
@@ -611,6 +622,37 @@ mod tests {
                 "case {ci}: {weights:?} 5 万次采样逐位一致 ({matched}/50000)"
             );
             println!("case {ci}: {weights:?} 采样逐位一致 (50000/50000)");
+        }
+        Ok(())
+    }
+
+    /// 零分配浮点分桶采样与 rand 浮点 `WeightedIndex` 逐位等价
+    ///
+    /// 覆盖事件分布（4 位 f64）等典型权重，同种子新旧两条路径各 5 万次逐次一致。
+    #[test]
+    fn test_sample_bucket_f64_matches_weighted_index() -> Result<()> {
+        let cases: [&[f64]; 5] = [
+            &[0.4, 0.3, 0.2, 0.1], // 事件分布典型形态（和为 1）
+            &[0.25, 0.25, 0.25, 0.25],
+            &[0.7, 0.1, 0.1, 0.1], // 首桶占优
+            &[0.1, 0.1, 0.1, 0.7], // 末桶占优（浮点舍入敏感位）
+            &[0.5, 0.5, 0.0],      // 零权重桶
+        ];
+        for (ci, weights) in cases.iter().enumerate() {
+            let mut rng_new = StdRng::seed_from_u64(42);
+            let mut rng_old = rng_new.clone();
+            let dist = WeightedIndex::new(weights.iter().copied()).unwrap();
+            let mut matched = 0usize;
+            for _ in 0..50_000 {
+                let new_bucket = sample_bucket(weights, &mut rng_new)?;
+                let old_bucket = dist.sample(&mut rng_old);
+                matched += usize::from(new_bucket == old_bucket);
+            }
+            assert!(
+                matched == 50_000,
+                "case {ci}: {weights:?} 5 万次浮点采样逐位一致 ({matched}/50000)"
+            );
+            println!("case {ci}: {weights:?} 浮点采样逐位一致 (50000/50000)");
         }
         Ok(())
     }
