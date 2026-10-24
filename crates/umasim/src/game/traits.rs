@@ -9,7 +9,7 @@ use std::fmt::{Debug, Display};
 use std::iter::Sum;
 use std::ops::AddAssign;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, ensure};
 use rand::Rng;
 use rand::distr::uniform::SampleUniform;
 use rand::rngs::StdRng;
@@ -22,7 +22,10 @@ use umaai_core::rng::EventRng;
 use super::PersonType;
 use crate::game::{CardTrainingEffect, StageId, SupportCard, Uma};
 
-/// 训练基础值表：`[训练 0-4][等级 0-4] -> [速耐力根智 PT 体力消耗]`
+/// 训练基础值表：`[训练][等级 0 基] -> [速耐力根智 PT 体力消耗]`
+///
+/// 训练数与等级行数都按剧本表实际长度（默认公式不做 5 训练 / 5 级假设，见
+/// [`Game::default_calc_training_value`]）。
 pub type TrainingBasicTable = Vec<Vec<[i32; 7]>>;
 
 /// 训练基础值表来源（剧本钩子）
@@ -378,7 +381,7 @@ pub trait Game: Clone + TrainingValueSource {
             })
             .unwrap_or(0)
     }
-    /// 设施等级 getter
+    /// 设施等级 getter（1 基；上限由各剧本基础值表的等级行数决定，可多于 5 级）
     fn train_level(&self, train: usize) -> usize;
     /// uma getter
     fn uma(&self) -> &Uma;
@@ -471,15 +474,21 @@ pub trait Game: Clone + TrainingValueSource {
         self.default_calc_training_value(buffs, train)
     }
     /// provided: 计算训练属性（训练值公式）
+    ///
+    /// 训练与等级都按基础值表实际长度取值：表外训练点名拒绝、等级超出表行数沿用末行
+    /// （新剧本可有多于 5 级的训练，如演出等级）。
     fn default_calc_training_value(&self, buffs: &CardTrainingEffect, train: usize) -> Result<ActionValue> {
-        let train_level = self.train_level(train) - 1; // 返回1-5处理成0-4
-        if train >= 5 {
-            return Err(anyhow!("训练类型错误: {train}"));
-        }
+        let table = self.training_basic_table();
+        let rows = table
+            .get(train)
+            .ok_or_else(|| anyhow!("训练类型错误: {train}（表内训练数 {}）", table.len()))?;
+        ensure!(!rows.is_empty(), "训练 {train} 的基础值表没有等级行");
+        // 1 基等级转 0 基行号，按表实际行数夹取
+        let train_level = self.train_level(train).clamp(1, rows.len()) - 1;
         // 人数（含 NPC 与分身占位，排除理事长和记者）
         let person_count = self.count_training_persons(train);
         // 基础值
-        let basic_value = &self.training_basic_table()[train][train_level];
+        let basic_value = &rows[train_level];
         let basic_motivation = ((self.uma().motivation - 3) * 10) as f32;
         // 成长率
         let b = &self.uma().five_status_bonus;
@@ -516,8 +525,18 @@ pub trait Game: Clone + TrainingValueSource {
     }
 
     /// 粗略拟合的训练失败率，二次函数 A*(x0-x)^2+B*(x0-x)
+    ///
+    /// 阈值按常量表实际长度取值：表外训练点名拒绝、等级超出表行数沿用末级阈值
+    /// （新剧本可有多于 5 级的训练，常量表仍为 5 级）。
     fn calc_training_failure_rate(&self, buffs: &CardTrainingEffect, train: usize) -> Result<f32> {
-        let x0 = Data::get()?.consts.training_vital_threshold[train][self.train_level(train) - 1];
+        let thresholds = &Data::get()?.consts.training_vital_threshold;
+        let row = thresholds
+            .get(train)
+            .ok_or_else(|| anyhow!("训练类型错误: {train}（阈值表内训练数 {}）", thresholds.len()))?;
+        ensure!(!row.is_empty(), "训练 {train} 的失败率阈值表为空");
+        // 1 基等级转 0 基，按阈值表实际长度夹取
+        let level = self.train_level(train).clamp(1, row.len()) - 1;
+        let x0 = row[level];
         let vital = self.uma().vital as f32;
         // 失败率修正
         let bias = if self.uma().flags.good_trainer {
@@ -565,10 +584,10 @@ pub trait Trainer<G: Game> {
 /// 相同），桶归属用线性前缀和替代 `partition_point`（取首个累积权重 > 采样值的下标，
 /// 与 rand 的 `cumulative_weights.partition_point(|w| w <= chosen)` 同语义，末桶兜底）。
 ///
+/// 公共原语：剧本仓的分布 / 分层抽签可直接复用（权重和非法时经 `Uniform` 报错）。
 /// 与 `WeightedIndex` 的差异仅在性能面：不构造累积数组、零堆分配，适合分布 /
-/// 事件抽取等 rollout 热路径；权重和非法（非正 / 非有限）时经 `Uniform` 报错，
-/// 等价性由单测同种子逐次比对守门。
-pub(crate) fn sample_bucket<X>(weights: &[X], rng: &mut impl Rng) -> Result<usize>
+/// 事件抽取等 rollout 热路径；等价性由单测同种子逐次比对守门。
+pub fn sample_bucket<X>(weights: &[X], rng: &mut impl Rng) -> Result<usize>
 where
     X: SampleUniform + Sum + PartialOrd + AddAssign + Default + Copy,
 {
@@ -654,6 +673,219 @@ mod tests {
             );
             println!("case {ci}: {weights:?} 浮点采样逐位一致 (50000/50000)");
         }
+        Ok(())
+    }
+
+    /// 最小 Game 桩：只喂训练值公式要的字段（表 / 等级 / 马娘），其余全空
+    ///
+    /// 用于验证默认公式「按表实际长度取行」的等级泛化行为（>5 级表）。
+    #[derive(Clone)]
+    struct LevelGame {
+        table: TrainingBasicTable,
+        level: usize,
+        uma: Uma,
+        persons: Vec<LevelPerson>,
+        distribution: Vec<Vec<i32>>,
+        deck: Vec<SupportCard>,
+    }
+
+    /// 桩用空人头
+    #[derive(Debug, Clone, PartialEq, Default)]
+    struct LevelPerson {
+        hint: bool,
+    }
+
+    impl Person for LevelPerson {
+        fn person_type(&self) -> PersonType {
+            PersonType::Npc
+        }
+        fn person_index(&self) -> i32 {
+            0
+        }
+        fn train_type(&self) -> i32 {
+            -1
+        }
+        fn friendship(&self) -> i32 {
+            0
+        }
+        fn hint(&self) -> bool {
+            self.hint
+        }
+        fn set_hint(&mut self, hint: bool) {
+            self.hint = hint;
+        }
+        fn set_friendship(&mut self, _friendship: i32) {}
+        fn card_id(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    /// 桩用空动作
+    #[derive(Debug, Clone, PartialEq)]
+    struct LevelAction;
+
+    impl Display for LevelAction {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "stub")
+        }
+    }
+
+    impl ActionEnum for LevelAction {
+        type Game = LevelGame;
+        fn apply(&self, _game: &mut LevelGame, _rng: &mut impl Rng) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    impl TrainingValueSource for LevelGame {
+        fn training_basic_table(&self) -> &TrainingBasicTable {
+            &self.table
+        }
+    }
+
+    impl Game for LevelGame {
+        type Person = LevelPerson;
+        type Action = LevelAction;
+
+        fn turn(&self) -> i32 {
+            0
+        }
+        fn max_turn(&self) -> i32 {
+            78
+        }
+        fn rule_master(&self) -> Option<u64> {
+            None
+        }
+        fn set_rule_master(&mut self, _master: u64) {}
+        fn stage(&self) -> StageId {
+            StageId::new(0)
+        }
+        fn next(&mut self) -> bool {
+            false
+        }
+        fn run_stage<T: Trainer<Self>>(&mut self, _trainer: &T, _rng: &mut StdRng) -> Result<()> {
+            Ok(())
+        }
+        fn list_actions(&self) -> Result<Vec<LevelAction>> {
+            Ok(vec![])
+        }
+        fn generate_events(&self, _rng: &mut impl Rng) -> Vec<EventData> {
+            vec![]
+        }
+        fn apply_event(&mut self, _event: &EventData, _choice: usize, _rng: &mut impl Rng) -> Result<()> {
+            Ok(())
+        }
+        fn persons(&self) -> &[LevelPerson] {
+            &self.persons
+        }
+        fn persons_mut(&mut self) -> &mut [LevelPerson] {
+            &mut self.persons
+        }
+        fn init_persons(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn distribution(&self) -> &Vec<Vec<i32>> {
+            &self.distribution
+        }
+        fn distribution_mut(&mut self) -> &mut Vec<Vec<i32>> {
+            &mut self.distribution
+        }
+        fn absent_rate_drop(&self) -> i32 {
+            0
+        }
+        fn deyilv(&mut self, _person_index: i32) -> f32 {
+            0.0
+        }
+        fn has_group_buff(&self) -> bool {
+            false
+        }
+        fn train_level(&self, _train: usize) -> usize {
+            self.level
+        }
+        fn uma(&self) -> &Uma {
+            &self.uma
+        }
+        fn uma_mut(&mut self) -> &mut Uma {
+            &mut self.uma
+        }
+        fn deck(&self) -> &Vec<SupportCard> {
+            &self.deck
+        }
+    }
+
+    /// 构造等级桩（表为单训练 6 级，逐级体力消耗 -10..-60 便于区分选行）
+    fn level_game(level: usize) -> LevelGame {
+        let rows: Vec<[i32; 7]> = (0..6).map(|i| [10 + i, 0, 0, 0, 0, 0, -10 * (i + 1)]).collect();
+        LevelGame {
+            table: vec![rows],
+            level,
+            uma: Uma::default(),
+            persons: Vec::new(),
+            distribution: Vec::new(),
+            deck: Vec::new(),
+        }
+    }
+
+    /// 层1：训练值默认公式按表实际行数取行——6 级表可取第 6 级，越表沿用末行，表外训练报错
+    #[test]
+    fn test_default_calc_training_value_by_table_len() -> Result<()> {
+        let buffs = CardTrainingEffect::default();
+        // 等级 3 → 第 3 行（vital -30）
+        let game = level_game(3);
+        assert_eq!(
+            game.default_calc_training_value(&buffs, 0)?.vital,
+            -30,
+            "等级 3 取第 3 行"
+        );
+        // 等级 6（超出旧口径 1..5）→ 末行（vital -60）
+        let game = level_game(6);
+        assert_eq!(
+            game.default_calc_training_value(&buffs, 0)?.vital,
+            -60,
+            "6 级表取第 6 行"
+        );
+        // 等级 9（超出表行数）→ 沿用末行，不越界
+        let game = level_game(9);
+        assert_eq!(
+            game.default_calc_training_value(&buffs, 0)?.vital,
+            -60,
+            "越表等级沿用末行"
+        );
+        // 表外训练点名拒绝（旧实现先取等级会 panic，此处必须走 Err）
+        let game = level_game(1);
+        let err = game
+            .default_calc_training_value(&buffs, 1)
+            .err()
+            .map(|e| format!("{e:#}"))
+            .unwrap_or_default();
+        assert!(err.contains("训练类型错误"), "表外训练应报错: {err}");
+        Ok(())
+    }
+
+    /// 层1：失败率默认公式的阈值按常量表实际长度取——等级越表沿用末级阈值，表外训练报错
+    #[test]
+    fn test_calc_training_failure_rate_by_table_len() -> Result<()> {
+        use umaai_core::testing::data_root;
+        Data::init(data_root()?)?;
+        let buffs = CardTrainingEffect::default();
+        // 智（train 4）阈值表 5 级；体力 20 落在全部阈值之下，失败率随阈值单调
+        let rate = |level: usize| -> Result<f32> {
+            let mut game = level_game(level);
+            game.uma.vital = 20;
+            game.calc_training_failure_rate(&buffs, 4)
+        };
+        assert_eq!(rate(5)?, rate(6)?, "等级 6 越表沿用末级阈值");
+        assert_eq!(rate(5)?, rate(9)?, "等级 9 越表沿用末级阈值");
+        assert_ne!(rate(4)?, rate(5)?, "末级与上一级阈值应有区分（夹取不是瞎猜）");
+        // 表外训练点名拒绝（旧实现会 panic，此处必须走 Err）
+        let mut game = level_game(1);
+        game.uma.vital = 20;
+        let err = game
+            .calc_training_failure_rate(&buffs, 5)
+            .err()
+            .map(|e| format!("{e:#}"))
+            .unwrap_or_default();
+        assert!(err.contains("训练类型错误"), "表外训练应报错: {err}");
         Ok(())
     }
 }

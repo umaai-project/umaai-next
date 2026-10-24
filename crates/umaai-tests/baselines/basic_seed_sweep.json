@@ -4,7 +4,7 @@
   "meta": {
     "tool_version": "0.1.0",
     "data_schema_version": 1,
-    "updated": "2026-10-17",
+    "updated": "2026-10-24",
     "note": "同参数 8 连局（seed 42..49）：单颗种子看不出位移时靠序列兜底"
   },
   "input": {
@@ -111,18 +111,18 @@
     "runs": 8
   },
   "expect": {
-    "score_max": 17153,
+    "score_max": 17127,
     "score_min": 15895,
-    "score_sum": 132337,
+    "score_sum": 132285,
     "scores": [
       16228,
       16937,
       16580,
       15895,
       16724,
-      16077,
+      16051,
       16743,
-      17153
+      17127
     ]
   }
 }

@@ -776,7 +776,7 @@ fn test_deck_tool() -> Result<()> {
         "--exclude 覆盖默认名单（两张）",
     );
 
-    // 构成约束可参数化：旧仓 ≤3 口径 101 种；必带卡 + 种类 ≥4 口径 21 种
+    // 构成约束可参数化：旧仓 ≤3 口径 101 种；必带友人 + 卡种 ≥4（全卡组 7 类口径）81 种
     let capped = run(&["deck", "--stage", "compose", "--max-per-type", "3", "--quiet"])?;
     checker.check(
         field(&capped, "compositions").as_deref() == Some("101"),
@@ -797,8 +797,8 @@ fn test_deck_tool() -> Result<()> {
         "必带卡占一槽、训练槽位减一",
     );
     checker.check(
-        field(&scene, "compositions").as_deref() == Some("21"),
-        "种类 ≥4 的构成数为 21（旧仓玩家真实 build 口径）",
+        field(&scene, "compositions").as_deref() == Some("81"),
+        "卡种下限按全卡组口径：友人计入后 ≥4 种 = 训练卡种 ≥3 → 81 种构成",
     );
 
     // 实测扫描：跑小样本，检查机读行结构与自证项

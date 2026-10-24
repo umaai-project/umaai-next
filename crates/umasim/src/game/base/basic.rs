@@ -565,10 +565,17 @@ impl Game for BasicGame {
         self.friend.group_buff_turn > 0
     }
     fn train_level(&self, train: usize) -> usize {
+        // 等级上限按基础值表实际行数（新剧本可多于 5 级）；表外训练按 1 级兜底
+        // （默认公式对表外训练会先行点名拒绝，见 default_calc_training_value）
+        let cap = self
+            .training_basic_table()
+            .get(train)
+            .map_or(1, |rows| rows.len().max(1));
         if self.is_xiahesu() {
-            5
+            cap
         } else {
-            (self.train_level_count[train] as usize / 4 + 1).clamp(1, 5)
+            let count = self.train_level_count.get(train).copied().unwrap_or(0) as usize;
+            (count / 4 + 1).clamp(1, cap)
         }
     }
 }
@@ -582,7 +589,7 @@ mod tests {
     use crate::game::PersonType;
 
     use super::*;
-    use crate::testutil::RACE_GRADES;
+    use crate::testutil::{RACE_GRADES, basic_game};
     use umaai_core::testing::data_root;
 
     /// 诊断日志计数（只数 target 为 "diagnostic" 的记录，避免与其它日志混计）
@@ -920,6 +927,22 @@ mod tests {
         assert!(game.uma.flags.ill.is_empty(), "治病应清空生病位集");
         assert!(!game.uma.flags.bad_trainer);
         assert_eq!(game.uma.vital, (vital_before + 20).min(game.uma.max_vital));
+        Ok(())
+    }
+
+    /// 层1：设施等级上限取基础值表实际行数（内置表 5 级），计数越界夹到表顶
+    #[test]
+    fn test_train_level_caps_at_table_rows() -> Result<()> {
+        let mut game = basic_game()?;
+        game.train_level_count = [0, 4, 8, 16, 100];
+        assert_eq!(game.train_level(0), 1, "0 次 → 1 级");
+        assert_eq!(game.train_level(1), 2, "4 次 → 2 级");
+        assert_eq!(game.train_level(2), 3, "8 次 → 3 级");
+        assert_eq!(game.train_level(3), 5, "16 次 → 5 级（表顶）");
+        assert_eq!(game.train_level(4), 5, "100 次 → 夹到表顶 5 级");
+        // 小合宿拉满 = 表顶等级
+        game.turn = 36;
+        assert_eq!(game.train_level(0), 5, "小合宿设施拉满（表顶）");
         Ok(())
     }
 

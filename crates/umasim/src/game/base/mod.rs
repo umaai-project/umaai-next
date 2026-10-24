@@ -223,7 +223,8 @@ impl BaseGame {
     ///
     /// 副作用：
     /// - 按人头类型加羁绊（支援卡 +7 / 理事长·记者 +5，爱娇由 [`Self::add_friendship`] 施加）；
-    /// - 从本训练位的红点人头里抽一人，生成红点事件（属性或技能，含单卡 hint 等级）；
+    /// - 从本训练位的红点人头里抽一人，生成红点事件（走 [`Self::do_hint`] 完整口径：
+    ///   次数 / 等级截断 / 单卡累计）；
     /// - 非合宿时按概率生成加练事件；
     /// - 友人首次 / 常规点击、理事长点击、记者点击事件。
     pub fn default_after_train<P: crate::game::Person>(
@@ -258,24 +259,11 @@ impl BaseGame {
                 _ => {}
             };
         }
-        // 生成加练或者红点事件（人头下标 ≠ 卡组下标：按 card_id 反查卡面）
+        // 生成加练或者红点事件（红点走完整口径：次数 / 等级截断 / 单卡累计，见 do_hint）
         let mut hint_chosen: Option<i32> = None;
-        if let Some(p) = hint_persons.choose(rng) {
-            hint_chosen = Some(*p);
-            let attr_prob = Data::get()?.event_prob("hint_attr")?;
-            let card = persons[*p as usize]
-                .card_id()
-                .and_then(|cid| self.deck.iter().find(|c| c.card_id == cid));
-            let hint_level = card.map_or(1, |c| 1 + c.card_value().hint_level);
-            let mut hint_event = if rng.random_bool(attr_prob) {
-                crate::game::hint_attr_event(persons[*p as usize].train_type() as usize, *p as usize)?
-            } else {
-                crate::game::hint_skill_event(hint_level, *p as usize)
-            };
-            if let Some(card) = card {
-                hint_event.name = format!("{} - {}", hint_event.name, card.short_name());
-            }
-            self.unresolved_events.push(hint_event);
+        if let Some(&p) = hint_persons.choose(rng) {
+            hint_chosen = Some(p);
+            self.do_hint(persons, p as usize, rng)?;
         }
         let extra_train_prob = Data::get()?.event_prob("extra_train")?;
         let mut extra_train = false;
@@ -344,6 +332,51 @@ impl BaseGame {
         }
         if !parts.is_empty() {
             diag!("训练后处理 训练位{train}: {}", parts.join(" "));
+        }
+        Ok(())
+    }
+
+    /// 生成红点事件（发生次数 / 等级截断 / 单卡累计的完整口径，可复用件）
+    ///
+    /// 单卡红点等级取「卡面等级 + 1」，受 5 级与单卡累计上限（`max_hint_per_card`）双重截断；
+    /// 卡面 `hint_count_bonus` 决定本次发生次数；等级为 0（超限）时只给属性红点、不累计。
+    /// 谁能亮红点（发生率）不在本方法——归契约 `distribute_hint`（剧本覆写口径不变）。
+    /// 人头下标 ≠ 卡组下标：按 `card_id` 反查卡面；非卡人头按 1 级 1 次处理。
+    pub fn do_hint<P: crate::game::Person>(
+        &mut self,
+        persons: &[P],
+        person_index: usize,
+        rng: &mut impl Rng,
+    ) -> Result<()> {
+        let data = Data::get()?;
+        let attr_prob = data.event_prob("hint_attr")?;
+        let max_hint = data.consts.max_hint_per_card;
+        let card = persons[person_index]
+            .card_id()
+            .and_then(|cid| self.deck.iter().position(|c| c.card_id == cid));
+        let (hint_level, hint_count) = match card {
+            Some(idx) => {
+                let level = (1 + self.deck[idx].card_value().hint_level)
+                    .min(5)
+                    .min(max_hint - self.deck[idx].total_hints);
+                (level, 1 + self.deck[idx].effect.hint_count_bonus)
+            }
+            None => (1, 1),
+        };
+        for _ in 0..hint_count {
+            let mut hint_event = if rng.random_bool(attr_prob) || hint_level == 0 {
+                // 红点提供属性；超过单卡累计上限时也只能提供属性
+                crate::game::hint_attr_event(persons[person_index].train_type() as usize, person_index)?
+            } else {
+                if let Some(idx) = card {
+                    self.deck[idx].total_hints += hint_level;
+                }
+                crate::game::hint_skill_event(hint_level, person_index)
+            };
+            if let Some(idx) = card {
+                hint_event.name = format!("{} - {}", hint_event.name, self.deck[idx].short_name());
+            }
+            self.unresolved_events.push(hint_event);
         }
         Ok(())
     }
@@ -474,11 +507,6 @@ impl BaseGame {
             turn_fixed: None,
             event: None,
         })
-    }
-
-    /// 基础设施等级（计数 / 4 + 1，夹 1-5）
-    pub fn base_train_level(&self, train: usize) -> usize {
-        (self.train_level_count[train] / 4 + 1).clamp(0, 5) as usize
     }
 
     /// 随机选择一个能发生的事件（按 `max_time` 次数限制过滤）
@@ -751,6 +779,105 @@ mod tests {
         assert!(game.can_friend_outing(), "还有余量");
         game.friend.out_state = FriendOutState::BeforeUnlock;
         assert!(!game.can_friend_outing(), "未解锁");
+    }
+
+    /// 层1：do_hint 完整口径——技能档按「卡面等级 +1」累计单卡 hint
+    #[test]
+    fn test_do_hint_accumulates_card_hints() -> Result<()> {
+        use anyhow::Context;
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        use crate::testutil::basic_game;
+
+        let mut game = basic_game()?;
+        let attr_prob = Data::get()?.event_prob("hint_attr")?;
+        let max_hint = Data::get()?.consts.max_hint_per_card;
+        // 找一个首抽落技能档的种子（属性档只占 attr_prob，前几个种子必有）
+        let seed = (0..64)
+            .find(|&s| !StdRng::seed_from_u64(s).random_bool(attr_prob))
+            .context("应存在技能档种子")?;
+        let panel_level = game.deck[0].card_value().hint_level;
+        let expect = (1 + panel_level).min(5).min(max_hint);
+        let before = game.unresolved_events.len();
+        let mut rng = StdRng::seed_from_u64(seed);
+        game.base.do_hint(&game.persons, 0, &mut rng)?;
+        assert_eq!(game.unresolved_events.len() - before, 1, "无判定加成的卡发生 1 次");
+        let event = game.unresolved_events.last().context("应有红点事件")?;
+        assert!(event.name.starts_with("Hint - 技能"), "技能档事件名: {}", event.name);
+        assert_eq!(event.choices[0][0].value.hint_level, expect, "事件携带截断后等级");
+        assert_eq!(game.deck[0].total_hints, expect, "单卡累计 = 截断后等级");
+        Ok(())
+    }
+
+    /// 层1：do_hint 发生次数按卡面判定加成（1 + hint_count_bonus）
+    #[test]
+    fn test_do_hint_count_bonus() -> Result<()> {
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        use crate::testutil::basic_game;
+
+        let mut game = basic_game()?;
+        game.deck[0].effect.hint_count_bonus = 2;
+        let before = game.unresolved_events.len();
+        let mut rng = StdRng::seed_from_u64(0);
+        game.base.do_hint(&game.persons, 0, &mut rng)?;
+        assert_eq!(game.unresolved_events.len() - before, 3, "判定加成 2 → 发生 3 次");
+        Ok(())
+    }
+
+    /// 层1：do_hint 超过单卡累计上限时只给属性红点、不再累计
+    #[test]
+    fn test_do_hint_overflow_attr_only() -> Result<()> {
+        use anyhow::Context;
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        use crate::testutil::basic_game;
+
+        let mut game = basic_game()?;
+        let max_hint = Data::get()?.consts.max_hint_per_card;
+        game.deck[0].total_hints = max_hint;
+        let before = game.unresolved_events.len();
+        let mut rng = StdRng::seed_from_u64(0);
+        game.base.do_hint(&game.persons, 0, &mut rng)?;
+        assert_eq!(game.unresolved_events.len() - before, 1, "超限仍发生 1 次（给属性）");
+        let event = game.unresolved_events.last().context("应有红点事件")?;
+        assert!(event.name.contains("属性"), "超限只给属性红点: {}", event.name);
+        assert_eq!(game.deck[0].total_hints, max_hint, "超限不再累计");
+        Ok(())
+    }
+
+    /// 层1：do_hint 非卡人头按 1 级 1 次处理（不触卡组累计）
+    #[test]
+    fn test_do_hint_non_card_person() -> Result<()> {
+        use anyhow::Context;
+        use rand::SeedableRng;
+        use rand::rngs::StdRng;
+
+        use crate::game::PersonType;
+        use crate::testutil::basic_game;
+
+        let mut game = basic_game()?;
+        let attr_prob = Data::get()?.event_prob("hint_attr")?;
+        // 非卡人头的属性档走 train_type 会越界（沿用旧口径：默认路径不给非卡亮红点），取技能档种子
+        let seed = (0..64)
+            .find(|&s| !StdRng::seed_from_u64(s).random_bool(attr_prob))
+            .context("应存在技能档种子")?;
+        let yayoi = game
+            .persons
+            .iter()
+            .position(|p| p.person_type == PersonType::Yayoi)
+            .context("基础局应有理事长")?;
+        let before = game.unresolved_events.len();
+        let mut rng = StdRng::seed_from_u64(seed);
+        game.base.do_hint(&game.persons, yayoi, &mut rng)?;
+        assert_eq!(game.unresolved_events.len() - before, 1, "非卡发生 1 次");
+        let event = game.unresolved_events.last().context("应有红点事件")?;
+        assert_eq!(event.choices[0][0].value.hint_level, 1, "非卡按 1 级");
+        assert!(game.deck.iter().all(|c| c.total_hints == 0), "非卡红点不累计卡组");
+        Ok(())
     }
 
     /// 层1：apply_friend_bonus 对 status_pt 乘算（floor 除法）

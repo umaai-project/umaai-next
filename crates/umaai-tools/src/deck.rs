@@ -127,7 +127,10 @@ pub struct DeckSpec {
     pub fixed: Vec<FixedCard>,
     /// 单类型张数上限（`None` = 不限；剧本可 5 速）
     pub max_per_type: Option<usize>,
-    /// 种类数下限（`None` = 不限；如拉面杯「种类 ≥4」）
+    /// 卡种数下限（`None` = 不限；如 miko 门禁「编成 ≥5 种」）
+    ///
+    /// **全卡组 7 类口径**：速 / 耐 / 力 / 根 / 智 + 友人 5 / 团队 6，必带卡计入
+    /// （见 [`Composition::kinds_with`]），与引擎侧 `card_type_count` / 固有效果 21 同口径。
     pub min_types: Option<usize>,
 }
 
@@ -312,10 +315,32 @@ impl Composition {
         self.counts.iter().sum()
     }
 
-    /// 非零类型数
+    /// 非零训练类型数
     #[must_use]
     pub fn kinds(&self) -> usize {
         self.counts.iter().filter(|c| **c > 0).count()
+    }
+
+    /// 全卡组卡种数：非零训练类型 ∪ 必带卡类型（7 类口径，含友人 5 / 团队 6）
+    ///
+    /// 与引擎侧 `card_type_count` 同口径：类型只认 0..=6、按 distinct 计；
+    /// 训练位已占的类型不重复计，必带卡之间同类型也只计一次。
+    #[must_use]
+    pub fn kinds_with(&self, fixed_types: &[i32]) -> usize {
+        let mut seen = [false; 7];
+        for (idx, count) in self.counts.iter().enumerate() {
+            if *count > 0 {
+                seen[idx] = true;
+            }
+        }
+        let mut kinds = self.kinds();
+        for &ty in fixed_types {
+            if (0..7).contains(&ty) && !seen[ty as usize] {
+                seen[ty as usize] = true;
+                kinds += 1;
+            }
+        }
+        kinds
     }
 
     /// 中文标签，形如 `速2耐1智2`
@@ -334,15 +359,18 @@ impl Composition {
 
 /// 枚举全部合法构成（五类训练卡张数合计 = 训练卡槽位数）
 ///
-/// 约束来自 [`DeckSpec`]：`max_per_type`（默认不限，故剧本可 5 速）与 `min_types`（默认不限）。
-pub fn compositions(spec: &DeckSpec) -> Vec<Composition> {
+/// 约束来自 [`DeckSpec`]：`max_per_type`（默认不限，故剧本可 5 速）与 `min_types`
+/// （默认不限）。`min_types` 按**全卡组 7 类口径**判定（必带卡计入，见
+/// [`Composition::kinds_with`]）；带必带卡时需解析其卡类型，故返回 `Result`。
+pub fn compositions(spec: &DeckSpec) -> Result<Vec<Composition>> {
     let total = spec.training_slots();
     let cap = spec.max_per_type.unwrap_or(total);
     let min_kinds = spec.min_types.unwrap_or(1);
+    let fixed = fixed_card_types(spec)?;
     let mut out = Vec::new();
     let mut counts = [0usize; 5];
-    enumerate(0, total, cap, min_kinds, &mut counts, &mut out);
-    out
+    enumerate(0, total, cap, min_kinds, &fixed, &mut counts, &mut out);
+    Ok(out)
 }
 
 /// 递归枚举构成（`idx` = 当前属性下标，`left` = 剩余张数）
@@ -351,13 +379,14 @@ fn enumerate(
     left: usize,
     cap: usize,
     min_kinds: usize,
+    fixed: &[i32],
     counts: &mut [usize; 5],
     out: &mut Vec<Composition>,
 ) {
     if idx == 5 {
         if left == 0 {
             let comp = Composition { counts: *counts };
-            if comp.kinds() >= min_kinds {
+            if comp.kinds_with(fixed) >= min_kinds {
                 out.push(comp);
             }
         }
@@ -365,9 +394,26 @@ fn enumerate(
     }
     for take in 0..=left.min(cap) {
         counts[idx] = take;
-        enumerate(idx + 1, left - take, cap, min_kinds, counts, out);
+        enumerate(idx + 1, left - take, cap, min_kinds, fixed, counts, out);
     }
     counts[idx] = 0;
+}
+
+/// 必带卡的卡类型（去重；空 `fixed` 不触数据根）
+///
+/// 供 [`compositions`] 的卡种数门禁与呈现列使用。
+pub fn fixed_card_types(spec: &DeckSpec) -> Result<Vec<i32>> {
+    let mut out = Vec::new();
+    for fixed in &spec.fixed {
+        let ty = Data::get()?
+            .get_card(fixed.idrank / 10)
+            .with_context(|| format!("必带卡 idrank {} 无法解析", fixed.idrank))?
+            .card_type;
+        if !out.contains(&ty) {
+            out.push(ty);
+        }
+    }
+    Ok(out)
 }
 
 /// 组卡工具的流水线阶段
@@ -438,7 +484,7 @@ pub struct Plan {
     /// 单类型张数上限（缺省不限）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_per_type: Option<usize>,
-    /// 种类数下限（缺省不限）
+    /// 卡种数下限（缺省不限；全卡组 7 类口径，见 [`DeckSpec::min_types`]）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_types: Option<usize>,
     /// 每臂局数（缺省 [`DEFAULT_SCAN_RUNS`]）
@@ -678,6 +724,21 @@ pub fn deck_types(deck: &[u32]) -> Result<Vec<i32>> {
         "卡组存在重复卡（同一张卡占两个槽位，含同卡不同突破档）"
     );
     Ok(types)
+}
+
+/// 卡组的卡种数（7 类口径：速耐力根智 + 友人 5 / 团队 6，distinct）
+///
+/// 与引擎侧 `card_type_count` / 固有效果 21 的 7 类计数同口径（类型 >6 不计）；
+/// 剧本门禁（如「编成支援卡 ≥5 种」含友人卡）按本口径判定。校验同 [`deck_types`]：
+/// 长度下限 / 突破档 / 逐卡可解析 / 无重复。
+pub fn deck_kinds(deck: &[u32]) -> Result<usize> {
+    let mut seen = [false; 7];
+    for ty in deck_types(deck)? {
+        if (0..7).contains(&ty) {
+            seen[ty as usize] = true;
+        }
+    }
+    Ok(seen.iter().filter(|s| **s).count())
 }
 
 /// 逐类型实测扫描：固定参考卡组其余槽位，只替换目标类型槽位
@@ -1140,7 +1201,7 @@ pub fn rank(
     // 候选：一种构成一副代表卡组（卡序不足的构成跳过并计数）
     let mut candidates: Vec<(Composition, Vec<u32>)> = Vec::new();
     let mut skipped_unfillable = 0_usize;
-    for comp in compositions(spec) {
+    for comp in compositions(spec)? {
         match assemble(spec, &comp, &ordered) {
             Ok(deck) => candidates.push((comp, deck)),
             Err(_) => skipped_unfillable += 1,
@@ -1283,28 +1344,33 @@ mod tests {
 
     /// 层1：5 张训练卡无上限时构成数 = C(9,4) = 126；每类型 ≤3 时退化为旧仓的 101
     #[test]
-    fn test_compositions_counts() {
+    fn test_compositions_counts() -> Result<()> {
+        Data::init(umaai_core::testing::data_root()?)?;
         let spec = DeckSpec::default();
         assert_eq!(spec.training_slots(), 5, "默认即 5 张训练卡（+ 必带卡）");
-        assert_eq!(compositions(&spec).len(), 126, "五类合计 5 张的全部构成");
+        assert_eq!(compositions(&spec)?.len(), 126, "五类合计 5 张的全部构成");
         let capped = DeckSpec {
             max_per_type: Some(3),
             ..spec.clone()
         };
-        assert_eq!(compositions(&capped).len(), 101, "旧仓 bench_compositions 口径");
-        // 6 槽（5 训练 + 1 必带）同样是 5 张训练卡 → 构成数不变
+        assert_eq!(compositions(&capped)?.len(), 101, "旧仓 bench_compositions 口径");
+        // 6 槽（5 训练 + 1 必带）无卡种门禁 → 构成数不变
         let with_friend = DeckSpec {
             slots: 6,
             fixed: vec![FixedCard { slot: 5, idrank: 303_054 }],
             ..spec.clone()
         };
         assert_eq!(with_friend.training_slots(), 5);
-        assert_eq!(compositions(&with_friend).len(), 126);
+        assert_eq!(compositions(&with_friend)?.len(), 126);
+        Ok(())
     }
 
-    /// 层1：构成合法性与标签；必带卡占槽后训练槽位随之减少
+    /// 层1：卡种下限按全卡组 7 类口径（必带友人计入）——门禁 4 / 5 种分别映射到训练卡种 ≥3 / ≥4
+    ///
+    /// miko 门禁表达：推荐配卡 21101 + 友人 = 5 种，即 `min_types: 5` + 必带友人。
     #[test]
-    fn test_composition_legality_and_label() {
+    fn test_composition_gate_and_label() -> Result<()> {
+        Data::init(umaai_core::testing::data_root()?)?;
         let spec = DeckSpec {
             slots: 6,
             fixed: vec![FixedCard { slot: 5, idrank: 303_054 }],
@@ -1313,14 +1379,51 @@ mod tests {
             ..DeckSpec::default()
         };
         assert_eq!(spec.training_slots(), 5);
-        let comps = compositions(&spec);
-        assert!(!comps.is_empty());
+        let fixed = fixed_card_types(&spec)?;
+        assert_eq!(fixed, vec![5], "303054 是友人卡（类型 5）");
+        let comps = compositions(&spec)?;
+        assert_eq!(comps.len(), 81, "含友人后门禁 4 种 = 训练卡种 ≥3");
         for comp in &comps {
             assert_eq!(comp.sum(), 5, "构成合计应等于训练卡槽位");
-            assert!(comp.kinds() >= 4, "种类下限未被遵守: {}", comp.label());
+            assert!(comp.kinds_with(&fixed) >= 4, "卡种下限未被遵守: {}", comp.label());
         }
+        // 门禁 5 种 = 训练卡种 ≥4（miko 口径，21101 + 友人可表达）
+        let miko = DeckSpec {
+            min_types: Some(5),
+            ..spec.clone()
+        };
+        assert_eq!(compositions(&miko)?.len(), 21, "门禁 5 种 = 训练卡种 ≥4");
         let label = Composition { counts: [2, 1, 0, 0, 2] }.label();
         assert_eq!(label, "速2耐1智2");
+        Ok(())
+    }
+
+    /// 层1：kinds_with 的并集口径——训练位已占的类型不重复计、必带训练卡补位、越界类型不计
+    #[test]
+    fn test_kinds_with_union() {
+        let comp = Composition { counts: [2, 1, 0, 0, 2] };
+        assert_eq!(comp.kinds(), 3);
+        assert_eq!(comp.kinds_with(&[]), 3, "无必带卡即训练卡种");
+        assert_eq!(comp.kinds_with(&[5]), 4, "友人卡 +1");
+        assert_eq!(comp.kinds_with(&[5, 5]), 4, "同类型必带卡去重");
+        assert_eq!(comp.kinds_with(&[4]), 3, "必带智卡与训练位智重合不加");
+        assert_eq!(comp.kinds_with(&[2, 3]), 5, "必带力 / 根卡各 +1");
+        assert_eq!(comp.kinds_with(&[2, 23]), 4, "类型 >6 不计（引擎 7 类口径）");
+        // 训练位为空时必带训练卡补一个卡种
+        let no_wis = Composition { counts: [2, 1, 0, 0, 0] };
+        assert_eq!(no_wis.kinds_with(&[4]), 3, "必带智卡在智位为空时 +1");
+    }
+
+    /// 层1：deck_kinds 按 7 类口径数全卡组 distinct 卡种（默认骨架 3 种 + 友人 = 4）
+    #[test]
+    fn test_deck_kinds() -> Result<()> {
+        Data::init(umaai_core::testing::data_root()?)?;
+        assert_eq!(deck_kinds(&DEFAULT_REFERENCE_DECK)?, 3, "默认骨架速 2 耐 1 智 2 → 3 种");
+        let mut with_friend = DEFAULT_REFERENCE_DECK.to_vec();
+        with_friend.push(303_054);
+        assert_eq!(deck_kinds(&with_friend)?, 4, "加友人卡 → 4 种");
+        assert!(deck_kinds(&with_friend)? < 5, "4 种不满足「≥5 种」门禁");
+        Ok(())
     }
 
     /// 层1：口径自检拦住越界突破档、重复槽位与越界槽位

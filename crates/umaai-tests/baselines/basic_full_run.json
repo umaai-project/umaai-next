@@ -4,7 +4,7 @@
   "meta": {
     "tool_version": "0.1.0",
     "data_schema_version": 1,
-    "updated": "2026-10-17",
+    "updated": "2026-10-24",
     "note": "基础局固定种子整局：守终局评分 / PT / 五维 / 回合的数值位移"
   },
   "input": {

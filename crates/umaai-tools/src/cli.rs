@@ -1423,7 +1423,8 @@ fn run_deck_compose(
     out: &mut dyn Write,
 ) -> Result<()> {
     let reps = deck::pool(spec)?;
-    let comps = deck::compositions(spec);
+    let comps = deck::compositions(spec)?;
+    let fixed_types = deck::fixed_card_types(spec)?;
     let top_k = opts.top_k.unwrap_or(DEFAULT_TOP_K);
 
     // pool 已按「类型升序 → 面板分降序」排好，每类型截断到 Top-K 即静态代表卡
@@ -1478,7 +1479,7 @@ fn run_deck_compose(
         head.push((
             "构成约束".to_string(),
             format!(
-                "单类型上限 {} / 种类下限 {}",
+                "单类型上限 {} / 卡种下限 {}（全卡组 7 类，必带卡计入）",
                 spec.max_per_type.map_or("不限".to_string(), |v| v.to_string()),
                 spec.min_types.map_or("不限".to_string(), |v| v.to_string())
             ),
@@ -1545,7 +1546,7 @@ fn run_deck_compose(
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                         .join("/"),
-                    comp.kinds().to_string(),
+                    comp.kinds_with(&fixed_types).to_string(),
                     comp_decks(comp, &pool_counts).to_string(),
                     comp_decks(comp, &capped).to_string(),
                 ]
@@ -1555,7 +1556,13 @@ fn run_deck_compose(
             out,
             "{}",
             report::table_block(
-                &["构成", "速/耐/力/根/智", "种类", "卡组数（全池）", "卡组数（Top-K）"],
+                &[
+                    "构成",
+                    "速/耐/力/根/智",
+                    "卡种数（含必带）",
+                    "卡组数（全池）",
+                    "卡组数（Top-K）"
+                ],
                 &rows,
                 width
             )
