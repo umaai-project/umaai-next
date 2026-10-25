@@ -1,0 +1,9 @@
+# 剧本模拟器业务（基线裁判 / 批量跑局 / 测卡测量函数）
+#
+# 本模板只立骨架；基线 JSON 与基线测试由真实剧本仓自持。
+# 依赖待对应业务落地时再登记，避免空转依赖。
+[package]
+name = "scenario-sim"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true

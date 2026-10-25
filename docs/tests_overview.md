@@ -37,7 +37,7 @@ cargo test -p umaai-tests --release --test session_basic -- --nocapture    # 单
 - 集成测试与端到端测试不用 `assert`：经 `Checker`（`umaai-tests`）或同语义的 `Checks`（`crates/umaai/tests/common/mod.rs`）逐条打印 `ok` / `FAIL`，结束时聚合失败项返回 `Err`；加 `--nocapture` 才能看到逐条输出。
 - 测试工作目录为 workspace 根；需要定位路径时用测试支撑提供的公共函数。
 - L4 baseline 已落地：基线数据在 `crates/umaai-tests/baselines/*.json`（一基线一 JSON），判定在 `crates/umaai-tests/tests/baseline.rs`（含「改动一项期望即变红」的反自证守门）；重录：`cargo run --release -p umaai-tools --bin umaai-tools -- baseline --update`，单独校验：同名命令去掉 `--update`（可用 `--only <基线名>` 收窄）。
-- 空剧本仓模板是**独立包**（不在 workspace 成员表内）：`cargo check --manifest-path templates/umaai-scenario/Cargo.toml --all-targets`（CI 单独一步，守验收条款「不改引擎一行即可编过」）；模板自身不设测试，接入纪律见 `docs/scenario/`。
+- 空剧本仓模板是**独立 workspace**（不在 workspace 成员表内）：`cargo fmt --manifest-path templates/umaai-scenario/Cargo.toml --all --check` + `cargo check --manifest-path templates/umaai-scenario/Cargo.toml --workspace --all-targets` + `cargo clippy --manifest-path templates/umaai-scenario/Cargo.toml --workspace --all-targets -- -D warnings` + `cargo test --manifest-path templates/umaai-scenario/Cargo.toml --workspace --release`（CI 单独一步，守验收条款「不改引擎一行即可编过」）；模板自带 10 条纯逻辑单测（阶段 / 数据 / 配置 / 训练员），不依赖 `data/` 真实数据，固定种子基线由真实剧本仓自持。
 
 ## 目录
 - [umaai-core (71)](#umaai-core-71)

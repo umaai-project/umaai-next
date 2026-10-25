@@ -1,0 +1,8 @@
+# 剧本在线决策核心（帧段解析 / Session 接线 / 决策循环）
+#
+# 本模板只立骨架；依赖与模块待实现时再登记。
+[package]
+name = "scenario-ai"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true

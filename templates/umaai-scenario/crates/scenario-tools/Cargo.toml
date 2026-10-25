@@ -1,0 +1,8 @@
+# 剧本外围工具（测卡 / 复盘）
+#
+# 本模板只立骨架；依赖与 bin（单 bin 多子命令）待实现时再登记。
+[package]
+name = "scenario-tools"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true

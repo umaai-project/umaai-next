@@ -1,0 +1,46 @@
+//! 剧本动作（`Action`）与结算入口
+//!
+//! `apply` 只负责把动作落到局面上，**取哪条随机流由 `run_stage` 决定**（策略流）。
+
+use std::fmt::Display;
+
+use anyhow::Result;
+use rand::Rng;
+use umasim::game::{ActionEnum, Game};
+
+use super::ScenarioGame;
+
+/// 剧本动作
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    /// 训练（0-4：速 / 耐 / 力 / 根 / 智）
+    Train(u8),
+    /// 休息
+    Rest,
+}
+
+impl Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Train(idx) => write!(f, "训练{idx}"),
+            Self::Rest => write!(f, "休息"),
+        }
+    }
+}
+
+impl ActionEnum for Action {
+    type Game = ScenarioGame;
+
+    fn apply(&self, game: &mut Self::Game, rng: &mut impl Rng) -> Result<()> {
+        match self {
+            Self::Train(idx) => game.do_train(*idx as usize, rng),
+            Self::Rest => {
+                // 模板留白：休息恢复体力（真实剧本按自己的回复规则改）
+                let _ = rng;
+                let uma = game.uma_mut();
+                uma.vital = (uma.vital + 20).min(uma.max_vital);
+                Ok(())
+            }
+        }
+    }
+}

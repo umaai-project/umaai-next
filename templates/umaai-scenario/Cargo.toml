@@ -1,28 +1,38 @@
-# 空剧本仓模板（`umaai-scenario`）
+# 空剧本仓模板（`umaai-scenario`）workspace 根
 #
-# 复制本目录到自己的剧本仓后改名 `umaai-<剧本>`（如 `umaai-ramen`）；依赖写法见 README.md。
+# 复制本目录到自己的剧本仓后，把 `scenario` 统一替换为剧本名
+# （如 `ramen`：`scenario-core` → `ramen-core`）；依赖写法见 README.md。
 #
-# 依赖三档（详见 docs/scenario/README.md）：
+# 依赖三档（详见引擎仓 docs/scenario/README.md）：
 #   1. 开发期：并列目录 path（本模板按「留在引擎仓内」写相对路径）
 #   2. 稳定期：git + tag（同一 repo、同一 tag）
 #   3. 下游（Web / Android）：default-features = false（剪掉并行后端与文件监听）
-[package]
-name = "umaai-scenario"
+[workspace]
+resolver = "3"
+members = [
+    "crates/scenario-core",
+    "crates/scenario-sim",
+    "crates/scenario-ai",
+    "crates/scenario-cli",
+    "crates/scenario-tools",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 publish = false
 
-[dependencies]
-# 引擎稳定面：剧本只依赖这三个（外加终端样例面的 umaai-cli）
+[workspace.dependencies]
+# 引擎稳定面（scenario-core 只依赖前三个；终端样例面另引 umaai-cli）
 umaai-core = { path = "../../crates/umaai-core" }
 umasim = { path = "../../crates/umasim" }
 umaai = { path = "../../crates/umaai" }
-# 终端样例外壳用：复用呈现件（pub 面不承诺稳定）；Web / Android 宿主自实现 Frontend，可去掉
 umaai-cli = { path = "../../crates/umaai-cli" }
+
+# 本仓内部 crate（有消费者时再登记下一个）
+scenario-core = { path = "crates/scenario-core" }
 
 anyhow = "1.0.104"
 rand = { version = "0.9.5", features = ["std_rng"] }
 serde = { version = "1.0.229", features = ["derive"] }
-
-# 本模板自带 workspace 根（复制出去即独立包）；并入自己的 workspace 时删掉本表并登记 members
-[workspace]
+serde_json = "1.0.154"

@@ -63,7 +63,7 @@ miko_next/
 │  ├─ umaai-tools/  # 探针 / 基准（publish = false）
 │  ├─ umaai-tests/  # 集成 / 端到端 / baseline（publish = false）
 │  └─ umaai-update/ # 分发客户端公共库：频道清单协议 / 传输 / 校验 / 安装（零引擎依赖）
-├─ templates/         # 空剧本仓模板（独立包，不进 workspace；CI 单独 check）
+├─ templates/         # 空剧本仓模板（独立 workspace，不进 workspace；CI 单独守门）
 │  └─ umaai-scenario/
 ├─ docs/
 │  ├─ plan/         # 方案（含 v1 参考）
@@ -249,7 +249,7 @@ miko_next/
 | **P6c′-d** | 发布侧：CDN 目录与 `update.json` 生成流程、`ai_data` 补齐、发布步骤文档 | 待开工（设计见同上 §8） |
 | **P6e′** | 随机流分层升格为通用机制：决策流 / 局面流 / 事件流分开，剧本轴留剧本；删外挂 CRN | ✅ 已完成（core 已有原语接进计算层；守门用例见下方 P6e′ 执行定稿） |
 | **P6d′** | `umaai-tools` 分支推进对照（复盘用：同根两分支推进 n 回合比差别） | ✅ 已完成（`umaai-tools compare`：JSON 对照计划 + 单探测动作 vs 默认一选；见下方 P6d′ 执行定稿） |
-| **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | ✅ 已完成（模板 `templates/umaai-scenario/`〔独立包，CI 单独 check〕；文档 `docs/scenario/`；见下方 P7′ 执行定稿） |
+| **P7′** | 空剧本仓模板（lib + bin，见 §2「剧本仓形态」）+ 文档（机制 / 契约 / 术语）+ 验收 | ✅ 已完成（模板 `templates/umaai-scenario/`〔独立 workspace，CI 单独守门；2026-10-25 升格为五 crate，见下方 P7′ 执行定稿〕；文档 `docs/scenario/`） |
 | **P8′** | 组卡 / 测卡工具（通用层）：`umaai-core` 配对统计原语 + `umaai-tools` 的 `deck` / `arms` / `cardtest` 内核与 `deck` / `cardtest` 子命令（逐类型实测扫描优先 + 自持实验计划 + 逐槽贪婪 + 多重比较校正）；精确排序归剧本仓 | P8a′ / P8c′ 已落地（P8b′ 待剧本仓）；方案定稿见 [`tools_deck_cardtest.md`](tools_deck_cardtest.md) |
 
 ### P4′ 执行定稿（2026-10-17 拍板）
@@ -338,12 +338,13 @@ miko_next/
 
 | 项 | 定稿 |
 |---|---|
-| 模板落位 | 本仓 `templates/umaai-scenario/`（**独立包**，根 workspace `exclude`，维持验收条款「模板不进 workspace 成员表」；成员数在 P7′ 时为 6，P6c′-a 加入 `umaai-update` 后为 7）；CI 增一步 `cargo check` + `clippy -D warnings --manifest-path` |
-| 模板内容 | 最小可编译剧本：局面（`ScenarioGame` 包 `BaseGame` + 自持阶段机 + 策略流）、动作（`Action`）、人头（复用 `BasePerson`）、`Game` 22 必备项、`FlatSearchGame` 接入、`ScenarioView` 占位、`build_game` 装配 API、仓根瘦 bin（复用 `umaai-cli` 呈现件） |
+| 模板落位 | 本仓 `templates/umaai-scenario/`（**独立 workspace**，根 workspace `exclude`，维持验收条款「模板不进 workspace 成员表」；成员数在 P7′ 时为 6，P6c′-a 加入 `umaai-update` 后为 7）；CI 增一步 `--workspace` 的 `fmt` / `check` / `clippy` / `test`（`--manifest-path`） |
+| 模板内容 | 最小可编译剧本：局面（`ScenarioGame` 包 `BaseGame` + 自持阶段机 + 策略流）、动作（`Action`）、人头（复用 `BasePerson`）、`Game` 22 必备项、`FlatSearchGame` 接入、`ScenarioView` 占位、`build_game` 装配 API；2026-10-25 升格后 core 拆 `game/*` 与 `data` / `config` / `trainer` / `testing`，跑局 bin 落 `scenario-cli`（复用 `umaai-cli` 呈现件） |
 | 依赖写法 | 开发期 `path` / 稳定期 git `tag` / 下游 `default-features = false` 三档写进模板 README；模板自带 `[workspace]` 表以便独立构建 |
 | 文档 | 新增 `docs/scenario/`：`README.md`（接入指南：建仓 / 依赖 / 数据与配置注入 / 五条纪律 / 验收 / 常见坑）+ `contracts.md`（契约逐项清单：`Game` 22 必备与默认提供项 / `Person` / `ActionEnum` / `Trainer` / `FlatSearchGame` / `Frontend` / 装配入口 / `StageId` 与规则流 / View DTO）；术语并入 `docs/game/glossary.md` |
 | View DTO | 形态 A 细节定稿：**值快照**（owned、`Clone`）+ 序列化由剧本 `serde` 提供 + `non_exhaustive` + 单一取数口；open_items #20 据此收口 |
-| 验收 | 模板 `cargo check` / `clippy -D warnings` 通过（本地 + CI）；模板可跑一局冒烟；「接入新剧本时引擎 `git diff` 为空」写进接入纪律 |
+| 验收 | 模板 `fmt` / `check` / `clippy -D warnings` / `test --release` 通过（本地 + CI）；模板可跑一局冒烟；「接入新剧本时引擎 `git diff` 为空」写进接入纪律 |
+| 2026-10-25 追加 | 模板升格为**独立 workspace 五 crate**（与 `umaai-onsen` 同构）：`scenario-core` 宿主稳定面 + sim / ai / cli / tools 业务分面，`data/` 自持剧本资产与配置默认层，新增模板 `AGENTS.md` 与纯逻辑单测；CI 模板档改 `--workspace`（fmt / check / clippy / test）。模板仍是独立 workspace、不进引擎成员表 |
 | 不做 | 真实剧本数值 / 策略；剧本特化呈现（仍等真实剧本落地定形，open_items #18 顺延）；模板仓独立 git 仓（目录层级等首个真实剧本归纳） |
 
 ### 下游可用性改造（2026-10-17 立项）
@@ -391,7 +392,7 @@ miko_next/
 - `BasicGame` 固定种子可复现并跑完全部回合
 - baseline 可回归、`--update` 可回写
 - 核心枚举 `non_exhaustive`、serde 默认值齐全，新增钩子均带默认实现
-- 空剧本模板（`templates/umaai-scenario/`，独立包）可在不改引擎前提下 `cargo check` / `clippy -D warnings` 通过（CI 单独一步守门）
+- 空剧本模板（`templates/umaai-scenario/`，独立 workspace 五 crate）可在不改引擎前提下 `fmt` / `check` / `clippy -D warnings` / `test --release` 通过（CI 单独一步守门）
 - `src` 无超长文件（内联测试只留私有细节）
 
 ---

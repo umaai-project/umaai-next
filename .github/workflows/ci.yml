@@ -33,8 +33,10 @@ jobs:
             echo "rayon 仍在引擎链依赖图中：检查内部依赖的 default-features 与特性透传" >&2
             exit 1
           fi
-      # 空剧本仓模板是独立包（不在 workspace 内）：验收条款「不改引擎一行即可编过」在这一档守
-      - name: scenario template (standalone package)
+      # 空剧本仓模板是独立 workspace（不在 workspace 内）：验收条款「不改引擎一行即可编过」在这一档守
+      - name: scenario template (standalone workspace)
         run: |
-          cargo check --manifest-path templates/umaai-scenario/Cargo.toml --all-targets
-          cargo clippy --manifest-path templates/umaai-scenario/Cargo.toml --all-targets -- -D warnings
+          cargo fmt --manifest-path templates/umaai-scenario/Cargo.toml --all --check
+          cargo check --manifest-path templates/umaai-scenario/Cargo.toml --workspace --all-targets
+          cargo clippy --manifest-path templates/umaai-scenario/Cargo.toml --workspace --all-targets -- -D warnings
+          cargo test --manifest-path templates/umaai-scenario/Cargo.toml --workspace --release

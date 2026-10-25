@@ -14,8 +14,8 @@
 - **剧本通用件**：跨剧本复用的机制以**带默认实现、非破坏**的方式进 `umasim` / `umaai`；首批为温泉剧本 M1 前置的四个通用件（比赛事件构造 / 训练后默认处理 / 羁绊统一出口 / 配置覆盖层泛型解析），默认行为不变、L4 基线未位移。2026-10-24 追加两件：红点完整口径可复用件 `BaseGame::do_hint`（**默认行为不等价**，训练路径红点节奏变化、L4 基线已重录）与分桶采样 pub 原语 `sample_bucket`（等价改动，剧本仓已改用引擎件）。
 - workspace 根即项目根（`AGENTS.md` 所在目录）。
 - 剧本（外仓）：独立仓，依赖引用本仓 `umaai-core` / `umasim` / `umaai`，**自带 bin**（入口装配点），本仓不反向依赖；剧本专属类型 / 协议段 / 配置 / 数据与测试夹具均在外仓（2026-10-17 拍板，见 plan §2「剧本仓形态」）
-- 空剧本仓模板 `templates/umaai-scenario/`：**独立包**（根 workspace `exclude`，不进 7 crate 成员表），只依赖引擎稳定面，CI 用 `--manifest-path` 单独 `check` / `clippy` 守门；接入指南与契约清单在 `docs/scenario/`（P7′）
-- 现状：`umaai-core` 已落地通用机制与静态数据层（RNG 三流、统一错误、诊断输出机制、属性数组工具、通用统计原语与增量矩统计、CRN 种子表、局面状态标识、gamedata 纯 schema/DTO、数据加载与校验〔来源抽象：目录 / 内存〕）；`umasim` 已落地规则基座与契约 trait（通用枚举 / 阶段位置标识 `StageId` / 友人状态 / 继承 / 马娘 / 支援卡 / 基础局状态与动作 / 无剧本基础局及其私有阶段机 `BasicStage`；`Person` / `ActionEnum` / `Game` / `Trainer` / `TrainingValueSource`）、随机流分层（决策流只给训练员；局面流与事件流归局面底座、按 `(主种子, 回合)` 每回合派生；策略流由具体局面自持）、搜索框架（扁平搜索内核 + 剧本适配层 + 终局多维记录）与契约参考训练员；通用机制诊断埋点七处（事件 / 羁绊 / 比赛 / 训练后处理 / 失败分支，rollout 期间静默）、零分配泛型分桶采样（休息分档与事件分布热路径，与 rand 加权索引逐位一致；已 pub 化为 `umasim::game::sample_bucket` 供剧本仓复用）；`umaai` 已落地配置层、前端事件契约（含局面摘要）、离线运行器、运气分与记录装配、协议层（通用段 / 事件段 / 终局帧 / 帧通道）与帧驱动会话（记录落盘待有真实消费者）；`umaai-cli` 已落地呈现工具件、呈现样例与入口层，可开箱跑一局基础局冒烟；`umaai-tools` 已落地批量跑批、固定根搜索探针、基线框架、分支推进对照、组卡 / 测卡工具（含自持实验计划、逐槽贪婪与多重比较校正）、输出原语与单 bin 多子命令入口（基线重录在其内）；`umaai-tests` 已落地基线自动判定与工具冒烟，L4 基线可回归、可按需重录；空剧本仓模板（独立包）与接入文档已落地（P7′）；`umaai-update` 已落地分发客户端公共库（频道清单协议与发布侧生成、HTTP 与本地测试两种传输、无状态哈希判定、先全下后装的备份回滚式安装），入口接线 / 自更新 / 发布侧待开工（P6c′-a）。
+- 空剧本仓模板 `templates/umaai-scenario/`：**独立 workspace**（根 workspace `exclude`，不进 7 crate 成员表；内部五 crate `scenario-core` / `scenario-sim` / `scenario-ai` / `scenario-cli` / `scenario-tools`，与 `umaai-onsen` 同构），`scenario-core` 只依赖引擎稳定面，`data/` 自持剧本资产与配置默认层，仓内 `AGENTS.md` 记模板规则，`docs/` 自带文档骨架（索引 / 开发计划 / 接入包 / 占位登记 / 机制 / 术语 / 测试 / 交接），`scenario-cli` 提供 `scenario` / `random` / `manual` 三档（manual 为无颜色人工选择）；CI 用 `--manifest-path … --workspace` 单独跑 `fmt` / `check` / `clippy` / `test` 守门；接入指南、仓库形态、开发流程与性能优化见 `docs/scenario/`（P7′）
+- 现状：`umaai-core` 已落地通用机制与静态数据层（RNG 三流、统一错误、诊断输出机制、属性数组工具、通用统计原语与增量矩统计、CRN 种子表、局面状态标识、gamedata 纯 schema/DTO、数据加载与校验〔来源抽象：目录 / 内存〕）；`umasim` 已落地规则基座与契约 trait（通用枚举 / 阶段位置标识 `StageId` / 友人状态 / 继承 / 马娘 / 支援卡 / 基础局状态与动作 / 无剧本基础局及其私有阶段机 `BasicStage`；`Person` / `ActionEnum` / `Game` / `Trainer` / `TrainingValueSource`）、随机流分层（决策流只给训练员；局面流与事件流归局面底座、按 `(主种子, 回合)` 每回合派生；策略流由具体局面自持）、搜索框架（扁平搜索内核 + 剧本适配层 + 终局多维记录）与契约参考训练员；通用机制诊断埋点七处（事件 / 羁绊 / 比赛 / 训练后处理 / 失败分支，rollout 期间静默）、零分配泛型分桶采样（休息分档与事件分布热路径，与 rand 加权索引逐位一致；已 pub 化为 `umasim::game::sample_bucket` 供剧本仓复用）；`umaai` 已落地配置层、前端事件契约（含局面摘要）、离线运行器、运气分与记录装配、协议层（通用段 / 事件段 / 终局帧 / 帧通道）与帧驱动会话（记录落盘待有真实消费者）；`umaai-cli` 已落地呈现工具件、呈现样例与入口层，可开箱跑一局基础局冒烟；`umaai-tools` 已落地批量跑批、固定根搜索探针、基线框架、分支推进对照、组卡 / 测卡工具（含自持实验计划、逐槽贪婪与多重比较校正）、输出原语与单 bin 多子命令入口（基线重录在其内）；`umaai-tests` 已落地基线自动判定与工具冒烟，L4 基线可回归、可按需重录；空剧本仓模板（独立 workspace，五 crate）与接入文档已落地（P7′）；`umaai-update` 已落地分发客户端公共库（频道清单协议与发布侧生成、HTTP 与本地测试两种传输、无状态哈希判定、先全下后装的备份回滚式安装），入口接线 / 自更新 / 发布侧待开工（P6c′-a）。
 
 ### crate 定位
 
@@ -47,14 +47,14 @@
 - `rust-toolchain.toml`：stable 钉死 1.99.0，组件 `rustfmt` / `clippy`。
 - `rustfmt.toml`：稳定工具链可用选项（`max_width = 120` / `reorder_imports` / `style_edition = "2024"` 等）。
 - `.gitignore`：`/target`、`logs/`、`__pycache__/`、`*.pyc`、`templates/**/target/`。
-- `.github/workflows/ci.yml`：`cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo test --workspace --release`；另守两档降级形态：workspace 全默认特性关闭仍无 warning 编过（同时覆盖更新库「关掉 HTTP 特性、宿主自备传输」的形态）、串行引擎（`-p umasim -p umaai --no-default-features`）跑测试并断言依赖图里没有 rayon；末尾单独一步守空剧本模板（独立包 `cargo check` + `clippy -D warnings --manifest-path templates/umaai-scenario/Cargo.toml`）。
+- `.github/workflows/ci.yml`：`cargo fmt --all --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo test --workspace --release`；另守两档降级形态：workspace 全默认特性关闭仍无 warning 编过（同时覆盖更新库「关掉 HTTP 特性、宿主自备传输」的形态）、串行引擎（`-p umasim -p umaai --no-default-features`）跑测试并断言依赖图里没有 rayon；末尾单独一步守空剧本模板（独立 workspace，`fmt` + `check` + `clippy -D warnings` + `test --release`，均带 `--manifest-path templates/umaai-scenario/Cargo.toml --workspace`）。
 - 帧通道路径（`.portable` / `PluginData/SendGameStatusPlugin` / `thisTurn.json` / `finalScore.json`）是引擎**代码常量**，根目录由宿主注入，不做平台探测；实时监听用 `notify`（特性 `file-channel`），相关测试一律带显式超时（超时即失败）。帧的形态（信道种类 / 帧原文 / 痕迹类型 / 目录常量）不带特性依赖，常驻可用。
 
 ### 数据（`gamedata/`）
 
 - 单一数据根（只读输入，平铺）：`cardDB.json` / `umaDB.json` / `events.json` / `text_data_dict.json` / `constants.json` / `ai_config.toml`（默认层）；`manifest.json` 声明 schema 版本与必需文件，是载入时的唯一校验入口（当前只覆盖五张静态表，配置文件由引擎配置层单独载入）。
-- 配置两份、**同名不同位**：数据根内的 `ai_config.toml` 是**默认层**（唯一默认源，Rust 侧不留同名字段缺省），宿主目录内同名的另一份是**覆盖层**（桌面入口＝当前目录，存在才合并，段缺失整段沿用）；宿主目录由装配入口注入（默认当前目录），测试因此不污染运行目录。默认层按职责分段：`sim`（剧本与训练员选择器、马娘 / 卡组 / 继承 / 种子 / 局数 / 等级表预设名）、`search`（搜索参数）、`record`（记录开关、根目录、运气分显示分换算加成）、`output`（日志级别）、`presets`（具名预设表，现为比赛等级表）。默认马娘取**目标宽松**的一只，使随机训练员也能跑满全部回合（马娘的目标表决定能否跑满，见 issues）。剧本专属配置段不进本仓，由剧本仓自持。
-- 剧本数据不进本仓；加载收敛到 `umaai-core` 的单一 `data` 模块：来源抽象 `DataSource`（`table<T: DeserializeOwned>` + `key`，内置 `DirSource` 目录 / `MemorySource` 内存 JSON 值或文本）、值类型 `Data`（`from_source` / `load`）与全局 `init` / `init_from` / `get` / `try_get`（幂等凭来源标识，载入不写日志）；**来源与配置都由宿主注入**，引擎不硬编码路径，也不假设数据在磁盘上。
+- 配置两份、**同名不同位**：数据根内的 `ai_config.toml` 是**默认层**（唯一默认源，Rust 侧不留同名字段缺省），宿主目录内同名的另一份是**覆盖层**（桌面入口＝当前目录，存在才合并，段缺失整段沿用）；宿主目录由装配入口注入（默认当前目录），测试因此不污染运行目录。默认层按职责分段：`sim`（剧本与训练员选择器、马娘 / 卡组 / 继承 / 种子 / 局数 / 等级表预设名）、`search`（搜索参数）、`record`（记录开关、根目录、运气分显示分换算加成）、`output`（日志级别）、`presets`（具名预设表，现为比赛等级表）。默认马娘取**目标宽松**的一只，使随机训练员也能跑满全部回合（马娘的目标表决定能否跑满，见 issues）。剧本专属配置段不进本仓（模板样例除外），由剧本仓自持。
+- 剧本数据不进本仓（`templates/umaai-scenario/data/` 的模板样例资产除外）；加载收敛到 `umaai-core` 的单一 `data` 模块：来源抽象 `DataSource`（`table<T: DeserializeOwned>` + `key`，内置 `DirSource` 目录 / `MemorySource` 内存 JSON 值或文本）、值类型 `Data`（`from_source` / `load`）与全局 `init` / `init_from` / `get` / `try_get`（幂等凭来源标识，载入不写日志）；**来源与配置都由宿主注入**，引擎不硬编码路径，也不假设数据在磁盘上。
 - 运行输出（`logs/` 等）不入数据根。
 - 分发与更新：公共库 `umaai-update` 已落地、入口尚未接线（P6c′-a）——更新源是产品 crate 的编译期常量；远端 `update.json` 清单逐文件登记哈希、可选 `schema_version` 门控；`ai_data` 频道装到数据根（含默认层配置），`ura_data` 频道装到发布目录的 `.portable`；判定无状态（清单哈希 vs 本地文件），安装先全下后装、失败回滚，临时目录在工作目录下且成功后删除。详见 [`plan/tools_update.md`](plan/tools_update.md)。
 - 基线数据不在数据根：`crates/umaai-tests/baselines/*.json`（一基线一 JSON：`input` 自持、`expect` 逐项带容差、`meta` 记版本与日期**不含路径**）；判定见 `crates/umaai-tests/tests/baseline.rs`，重录走 `umaai-tools baseline --update`。
@@ -63,7 +63,7 @@
 
 - `plan/`：方案（`miko_next_plan.md` 权威 + `v1_plan_reference.md` 参考 + `tools_deck_cardtest.md` 组卡 / 测卡 + `tools_update.md` 自动更新）。
 - `game/`：游戏机制（规则 / 实现细节 / 术语 / 固有效果）。
-- `scenario/`：剧本仓接入指南（`README.md`）与契约参考（`contracts.md`，P7′）。
+- `scenario/`：剧本仓接入指南（`README.md`）+ 仓库形态（`repo_form.md`）+ 开发流程（`dev_process.md`）+ 性能优化（`perf_plan.md`）+ 契约参考（`contracts.md`，P7′）；模板 `templates/umaai-scenario/docs/` 另有本仓文档骨架。
 - `notes/`：开发笔记与待决事项（`open_items.md`）与 miko 新剧本预告（`miko_scenario_preview.md`，持续更新的未确认情报）。
 - `changelog.md`：变更日志（极简，每条一行）。
 - `issues.md`：问题记录（状态 + 排查过程）。
