@@ -18,8 +18,9 @@
 ## 2. 常用运行与降级矩阵
 
 ```powershell
-# 全量测试（Release + offline 为项目约定）
+# 全量测试与架构检查（Release + offline 为项目约定）
 cargo test --workspace --release --offline
+deslop-please
 
 # 仅列用例清单 / 跑默认跳过项（如真 watcher、真通道、ignored doctest）
 cargo test --workspace --release --offline -- --list
